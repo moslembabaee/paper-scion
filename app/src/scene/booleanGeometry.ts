@@ -250,7 +250,7 @@ function serializeCurves(curves: Curve[]): string {
   return contours.join(' ')
 }
 
-export interface BooleanResult { d: string; viewBox: readonly [number, number, number, number]; bounds: Bounds; fillRule: 'nonzero' }
+export interface BooleanResult { d: string; viewBox: readonly [number, number, number, number]; bounds: Bounds; fillRule: 'nonzero' | 'evenodd' }
 
 /**
  * Converts any vector element (path, rectangle, ellipse) into editable sub-path anchors.
