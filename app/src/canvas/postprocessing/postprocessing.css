@@ -1,0 +1,27 @@
+.post-processing-surface, .post-processing-source, .post-processing-output { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.post-processing-output { z-index:1; }
+.post-processing-output[hidden] { display:none; }
+.post-processing-inspector { min-width:0; }
+.post-add { width:100%; padding:10px; text-align:left; border:1px dashed var(--paper-border-strong); border-radius:4px; background:var(--paper-input); color:var(--paper-text); font-size:10px; cursor:pointer; }
+.post-add:hover { border-color:#81adec; }
+.post-toggle { display:flex; align-items:center; justify-content:space-between; gap:7px; font-size:10px; color:var(--paper-text-secondary); margin:10px 0; }
+.post-toggle input[type='checkbox'] { accent-color:#81adec; width:12px; height:12px; }
+.post-toggle input[type='color'] { width:34px; height:22px; padding:1px; border:1px solid var(--paper-border); background:var(--paper-input); border-radius:3px; }
+.post-stack { display:grid; gap:8px; margin:14px 0; }
+.post-stack[data-bypassed='true'] { opacity:.55; }
+.post-pass { border:1px solid var(--paper-border); border-radius:4px; background:var(--paper-input); min-width:0; }
+.post-pass summary { display:flex; align-items:center; gap:8px; padding:10px 9px; font-size:10px; cursor:pointer; list-style:none; }
+.post-pass summary::-webkit-details-marker { display:none; }
+.post-pass summary::after { content:'+'; color:var(--paper-text-muted); }
+.post-pass[open] summary::after { content:'−'; }
+.post-pass-index { color:var(--paper-text-muted); font:9px var(--font-mono); }
+.post-pass summary i { width:4px; height:4px; border-radius:50%; background:var(--paper-text-muted); margin-left:auto; }
+.post-pass summary i[data-enabled='true'] { background:#81adec; box-shadow:0 0 6px #81adec40; }
+.post-pass-body { padding:0 10px 10px; border-top:1px solid var(--paper-border); }
+.post-pass-tools { display:flex; align-items:center; gap:2px; }
+.post-pass-tools .post-toggle { justify-content:flex-start; }
+.post-pass-tools > span { flex:1; }
+.post-pass-tools button { display:grid; place-items:center; background:transparent; color:var(--paper-text-secondary); border:0; padding:5px; cursor:pointer; border-radius:3px; }
+.post-pass-tools button:hover { background:var(--paper-hover); color:var(--paper-text); }
+.post-pass-tools button:disabled { opacity:.25; cursor:default; }
+.post-processing-inspector :focus-visible { outline:2px solid #81adec; outline-offset:2px; }

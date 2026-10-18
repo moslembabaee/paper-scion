@@ -1,0 +1,1137 @@
+Support
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+support
+
+FAQ & Troubleshooting
+
+Common questions, troubleshooting tips, and support resources for Paper
+
+Getting Started
+
+How do I get started?
+
+Download the
+
+Paper
+
+Desktop app
+
+and create a new file. You can start designing right away or connect an AI agent via the
+
+MCP server
+
+to build designs with natural language.
+
+Keyboard Shortcuts
+
+Most popular
+
+Press
+
+⌘
+
+.
+
+to show or hide the entire UI. Press again to bring it back.
+
+Press
+
+F
+
+to add a frame to the canvas. Press
+
+⇧
+
+F
+
+to wrap the current selection in a frame instead.
+
+Press
+
+⇧
+
+A
+
+to wrap the selection in a flex layout.
+
+Press
+
+T
+
+to add a text layer to the canvas.
+
+Press
+
+R
+
+to draw a rectangle on the canvas.
+
+Press
+
+Enter
+
+or
+
+Esc
+
+to select the children or parent of the current layer.
+
+Hold
+
+⌘
+
+and click to deep select a layer nested inside a frame or group. You can change the default hover selection to deep selection within settings.
+
+Tools & creation
+
+Tools (toolbar)
+
+Press
+
+V
+
+to switch to the Move tool.
+
+Press
+
+H
+
+to switch to the pan tool. It stays active until you switch tools.
+
+Press
+
+F
+
+to add a frame to the canvas. Press
+
+⇧
+
+F
+
+to wrap the current selection in a frame instead.
+
+Press
+
+R
+
+to draw a rectangle.
+
+Press
+
+P
+
+to switch to the pen tool for vector editing.
+
+Press
+
+T
+
+to add a text layer.
+
+Press
+
+S
+
+to open the shaders menu.
+
+Press
+
+I
+
+to sample a fill with the eyedropper, or copy a hex value when nothing is selected.
+
+Frames & flex
+
+Press
+
+⇧
+
+F
+
+to wrap the current selection in a frame, converting its layout if needed.
+
+Press
+
+⇧
+
+A
+
+to wrap the selection in a flex layout.
+
+Press
+
+⌥
+
+⇧
+
+A
+
+to remove the flex layout.
+
+AI & media
+
+Press
+
+⌘
+
+⇧
+
+I
+
+to open the create image panel.
+
+Press
+
+⌘
+
+⇧
+
+J
+
+to open the create SVG panel.
+
+Press
+
+⌘
+
+⇧
+
+K
+
+to upload an image.
+
+Selecting & managing layers
+
+Selection & hierarchy
+
+Hold
+
+⌘
+
+and click to deep select a layer nested inside a frame or group.
+
+Hold
+
+⌘
+
+and right-click to view the layer tree for everything under the cursor.
+
+Press
+
+Enter
+
+to select the children of the current layer. On a text layer it edits the text; on a vector path it enters edit mode.
+
+Press
+
+Esc
+
+to select the parent of the current layer. From the top level it clears the selection. Alternatively, press
+
+⇧
+
+Enter
+
+or
+
+\
+
+.
+
+Press
+
+⌘
+
+A
+
+to select all siblings of the selected element.
+
+Press
+
+⇧
+
+⌘
+
+A
+
+to select all siblings except the current selection.
+
+Press
+
+Tab
+
+or
+
+⇧
+
+Tab
+
+to cycle forward or backward through siblings.
+
+Press
+
+⌃
+
+Esc
+
+to clear the selection.
+
+Visibility, lock, & rename
+
+Press
+
+⇧
+
+⌘
+
+H
+
+to show or hide the selection.
+
+Press
+
+⇧
+
+⌘
+
+L
+
+to lock or unlock the selection.
+
+Press
+
+⌘
+
+⇧
+
+⌥
+
+L
+
+to unlock everything.
+
+Press
+
+⌘
+
+R
+
+to rename the selected layer.
+
+Press
+
+⌥
+
+L
+
+to collapse the layer tree.
+
+Arranging & aligning
+
+Order
+
+Press
+
+]
+
+to bring the selection to the front.
+
+Press
+
+[
+
+to send the selection to the back.
+
+Press
+
+⌘
+
+]
+
+to move the selection forward one step. Alternatively, press
+
+⌘
+
+⌥
+
+↑
+
+.
+
+Press
+
+⌘
+
+[
+
+to move the selection backward one step. Alternatively, press
+
+⌘
+
+⌥
+
+↓
+
+.
+
+Align
+
+Press
+
+⌥
+
+W
+
+to align to the top.
+
+Press
+
+⌥
+
+S
+
+to align to the bottom.
+
+Press
+
+⌥
+
+A
+
+to align to the left.
+
+Press
+
+⌥
+
+D
+
+to align to the right.
+
+Press
+
+⌥
+
+V
+
+to align to the vertical center.
+
+Press
+
+⌥
+
+H
+
+to align to the horizontal center.
+
+Distribute
+
+Press
+
+⌃
+
+⌥
+
+H
+
+to distribute horizontally.
+
+Press
+
+⌃
+
+⌥
+
+V
+
+to distribute vertically.
+
+Move & resize
+
+Press
+
+↑
+
+,
+
+↓
+
+,
+
+←
+
+, or
+
+→
+
+to nudge the selection by 1px. With nothing selected, this pans the canvas instead.
+
+Hold
+
+⇧
+
+while pressing an arrow key to nudge by a larger amount. Default amount is 8px, but you can change the default amount within settings > nudge settings.
+
+Hold
+
+⌘
+
+while pressing an arrow key to resize the selection.
+
+Group & structure
+
+Press
+
+⌘
+
+⇧
+
+G
+
+or
+
+⌘
+
+Backspace
+
+to ungroup the selection.
+
+Press
+
+⌥
+
+C
+
+to toggle clip content.
+
+Press
+
+⌥
+
+⇧
+
+⌘
+
+R
+
+to resize to fit the content.
+
+Press
+
+⌥
+
+⇧
+
+⌘
+
+F
+
+to resize to fill the container.
+
+Export, sharing, & dev
+
+Press
+
+⌥
+
+T
+
+to copy the selection as Tailwind classes.
+
+Press
+
+⌥
+
+R
+
+to copy the selection as React CSS.
+
+Press
+
+⌘
+
+⇧
+
+C
+
+to copy the selection as a PNG.
+
+Press
+
+⌘
+
+⇧
+
+E
+
+to export images.
+
+Press
+
+⌥
+
+⌘
+
+R
+
+to export video. (Only available on paid plans)
+
+In the desktop app, press
+
+⌘
+
+L
+
+to copy a link to the current file to your clipboard. In the browser app, this shortcut will focus the address bar which can then be copied.
+
+Copy, paste, & duplicate
+
+Press
+
+⌘
+
+C
+
+to copy the selection.
+
+Press
+
+⌘
+
+V
+
+to paste.
+
+Press
+
+⇧
+
+⌘
+
+V
+
+to paste on top of the selection.
+
+Press
+
+⇧
+
+⌘
+
+R
+
+to paste to replace the selection.
+
+Press
+
+⌘
+
+D
+
+to duplicate the selection.
+
+Press
+
+⌘
+
+X
+
+to cut the selection.
+
+Press
+
+⌥
+
+⌘
+
+C
+
+to copy the styles from the selection.
+
+Press
+
+⌥
+
+⌘
+
+V
+
+to paste styles onto the selection.
+
+Styling
+
+Text & typography
+
+Press
+
+⌘
+
+B
+
+to bold the text.
+
+Press
+
+⌘
+
+I
+
+to italicize the text, if the applied font supports it.
+
+Press
+
+⌘
+
+⇧
+
+,
+
+or
+
+⌘
+
+⇧
+
+.
+
+to decrease or increase the font size.
+
+Press
+
+⌥
+
+⇧
+
+,
+
+or
+
+⌥
+
+⇧
+
+.
+
+to decrease or increase the line height.
+
+Press
+
+⌥
+
+,
+
+or
+
+⌥
+
+.
+
+to decrease or increase the letter spacing.
+
+Press
+
+⌥
+
+⌘
+
+,
+
+or
+
+⌥
+
+⌘
+
+.
+
+to decrease or increase the font weight.
+
+Press
+
+⌥
+
+⌘
+
+L
+
+,
+
+⌥
+
+⌘
+
+T
+
+, or
+
+⌥
+
+⌘
+
+R
+
+to align text left, center, or right.
+
+Fill & opacity
+
+Press
+
+0
+
+through
+
+9
+
+to set the opacity. Type two digits in a row for precision (5 is 50%, 05 is 5%).
+
+Press
+
+⇧
+
+X
+
+to swap the fill and stroke.
+
+App & interface
+
+General
+
+Press
+
+⌘
+
+.
+
+to show or hide the UI.
+
+Press
+
+⇧
+
+.
+
+or
+
+⇧
+
+\
+
+to minimize the UI.
+
+Press
+
+⇧
+
+⌘
+
+N
+
+to open a new window.
+
+Press
+
+⇧
+
+⌘
+
+D
+
+to go back to the dashboard.
+
+Press
+
+⌘
+
+W
+
+to close the current window.
+
+Press
+
+⌘
+
+,
+
+to change logo settings.
+
+Zoom
+
+Press
+
++
+
+or to zoom in.
+
+Press
+
+−
+
+to zoom out.
+
+Press
+
+⌘
+
+0
+
+to zoom to 100%.
+
+Press
+
+⇧
+
+1
+
+to zoom to fit everything on screen.
+
+Press
+
+⇧
+
+2
+
+to zoom the selection to fill the screen.
+
+Hold
+
+Z
+
+or
+
+⌥
+
+Z
+
+and click to zoom in or out.
+
+Pan
+
+Press
+
+H
+
+to switch to the pan tool. It stays active until you switch tools.
+
+Hold
+
+Space
+
+to pan the canvas, then release to return to your tool.
+
+Press
+
+↑
+
+,
+
+↓
+
+,
+
+←
+
+, or
+
+→
+
+to pan the canvas when nothing is selected.
+
+Hold
+
+⇧
+
+while pressing an arrow key to pan faster.
+
+View aids
+
+Press
+
+⌘
+
+'
+
+to show or hide the pixel grid.
+
+Press
+
+⇧
+
+⌘
+
+'
+
+to toggle snap to the pixel grid.
+
+Press
+
+⇧
+
+G
+
+to toggle layout guides.
+
+Press
+
+⇧
+
+M
+
+to toggle multiplayer cursors.
+
+Hold
+
+⌥
+
+to show measurements between your selection and your hover selection.
+
+Troubleshooting
+
+The MCP server isn’t connecting
+
+Make sure you have the
+
+Paper
+
+Desktop app open with a file loaded, then connect your agent from the MCP panel. If issues persist, try restarting both the
+
+Paper
+
+Desktop app and your agent tool. See the
+
+MCP docs
+
+for more details.
+
+My agent says it doesn’t have access to
+
+Paper
+
+tools
+
+This usually happens when the MCP connection is stale. Restart your agent session to re-establish the connection. If you’re using Cursor, try toggling the MCP server off and on in
+
+Cursor Settings > Tools & MCP
+
+.
+
+Changes aren’t showing up in my design
+
+Make sure you have the correct file open in
+
+Paper
+
+Desktop. The MCP server operates on the currently open file. You can verify by asking the agent to call
+
+get_basic_info
+
+to check which file it sees.
+
+Adjust your network settings
+
+When using
+
+Paper
+
+in a company setting behind proxies, VPNs, or firewalls, you may need to add the following to your allowlist:
+
+*.paper.design
+
+Examples of network issues
+
+Keep an eye out for these common signs of network-related issues:
+
+Signing in fails or the app can’t load after signing in
+
+Configure a proxy bypass on macOS
+
+When on a Mac behind a proxy you may need to add a bypass for
+
+Paper
+
+domains:
+
+Open System Settings > Network > select your active network > Details… > Proxies
+
+Add
+
+.paper.design
+
+under Bypass proxy settings
+
+Apply changes, then restart your browser or the
+
+Paper
+
+desktop app
+
+Paper
+
+Desktop links aren’t opening
+
+When signing in if
+
+Paper
+
+isn’t being focused afterwards the custom protocol handler to open
+
+paper://
+
+links may not be integrated correctly.
+
+Linux AppImage
+
+When running AppImages on Linux they need to be integrated with the desktop to register the custom protocol handler. Use one of the following methods depending on your setup:
+
+Gear Lever
+
+— Open the AppImage in Gear Lever, then click “Move to the app menu”
+
+AppImageLauncher
+
+— Double-click the AppImage and select “Integrate and run” when prompted
+
+AppMan
+
+— Install the AppImage using the
+
+am
+
+or
+
+appman
+
+CLI
+
+If all else fails, try restarting your computer and try again.
+
+Using Windows WSL with MCP
+
+Paper
+
+Desktop’s MCP server is broadcast over localhost. When using WSL make sure to enable
+
+mirrored mode networking
+
+to allow WSL to access the MCP server.

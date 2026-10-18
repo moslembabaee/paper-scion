@@ -1,0 +1,217 @@
+Tokens
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+tokens
+
+Tokens
+
+Using tokens—named values for color, spacing, typography, and more—to keep your Paper canvas and codebase consistent
+
+Overview
+
+Tokens
+
+Tokens—also known as CSS variables—are values that make up a design system that you can apply across your
+
+Paper
+
+canvas and codebase. If you use Tailwind,
+
+Paper
+
+’s token system maps directly to how it works. Instead of hardcoding a hex value or a font size, you reference a token. When you update a token, everything using it updates automatically.
+
+Currently supported tokens
+
+Color
+
+Radius
+
+Spacing
+
+Container
+
+Breakpoint
+
+Font family
+
+Font weight
+
+Font size
+
+Line height
+
+Letter spacing
+
+Roadmap
+
+Group element styles together into reusable theme classes (e.g. an H1 that bundles font family, size, weight, line height, and letter spacing in one click)
+
+Support multiple theme modes, such a “dark mode” or “compact”, so tokens will have a different value depending on the active theme mode
+
+Guides
+
+Add tokens
+
+In-app
+
+You can add tokens in the
+
+Paper
+
+canvas:
+
+Open the Theme tab in the left side panel
+
+Click the add button, then choose the type of token you want to add
+
+Set the token’s name and value
+
+The token saves automatically when you close the modal or click elsewhere
+
+Via MCP
+
+From a design
+
+If you have an existing design on the canvas, you can have the agent generate tokens from it:
+
+Point the agent at a frame on your canvas
+
+Ask it to create tokens in
+
+Paper
+
+based on that design, specifying what to include (typography, color, spacing, radius, breakpoints, etc.)
+
+The agent will generate tokens in
+
+Paper
+
+You’ll know it worked when you see the token UI appear in
+
+Paper
+
+when editing an element.
+
+From a codebase
+
+Many teams already have tokens in their codebase and want their designs to reflect that as the source of truth.
+
+Connect your codebase and point your agent to it
+
+Ask it to create tokens in
+
+Paper
+
+using your CSS variables in code
+
+The agent will generate tokens in
+
+Paper
+
+Use tokens
+
+In a file that has tokens, look for dropdown menus in the property panel and select a token from there.
+
+For color properties, you can also click the four-circle icon to open the drop down of available tokens.
+
+Detach tokens
+
+When you detach a token, the property keeps its current value but is no longer linked to the token.
+
+To detach a color token, click the detach button to the right of the color property.
+
+To detach any other token, open the token dropdown and select the detach option, or click backspace.
+
+Update tokens
+
+You can update tokens from the same Theme tab where you added them. Click the token you want to edit, then update its name and value. Clicking elsewhere saves the change automatically. You can also duplicate a token by right-clicking it, which creates a new token you can give a different value.
+
+You can also have your agent update a token to a specific value, or pull a color directly from the canvas if you’ve done exploration there.
+
+The update reflects everywhere that token is used.
+
+Copy and share tokens
+
+We’re working on libraries, but for now you can copy tokens straight from the Theme tab to share them between files or paste them into your codebase.
+
+Between
+
+Paper
+
+files
+
+In the Theme tab, right-click the token you want to share and select Copy
+
+To take several at once, press
+
+⌘
+
+A
+
+to select them all, or hold
+
+⇧
+
+to select multiple, then right-click and copy
+
+Open your other file and paste anywhere with
+
+⌘
+
+V
+
+Tokens will be available in that file, but they will not update if changed in a different file.
+
+Into your codebase
+
+In the Theme tab, right-click the tokens you want and select Copy. Press
+
+⌘
+
+A
+
+first to take the whole set
+
+Paste into your CSS theme file
+
+Clear tokens
+
+In the Theme tab, right-click the token you want to remove and select delete. To remove several at once, press
+
+⌘
+
+A
+
+to select them all, or hold
+
+⇧
+
+or
+
+⌘
+
+to select multiple, then right-click and delete them together.
+
+Your agent can also remove specific tokens from your file. Just ask!

@@ -1,0 +1,212 @@
+Vector editing
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+svg
+
+Vector editing
+
+Paper
+
+supports importing, generating, and editing SVGs. Learn how to use vector editing in
+
+Paper
+
+, or check out our
+roadmap below for what’s coming soon.
+
+Vector editing roadmap
+
+We’re just getting started with vector editing!
+
+Today you can paste SVGs into
+
+Paper
+
+and edit them, but we’ll soon ship the ability to create new ones from scratch—including shapes like lines, rectangles, ellipses, and so on.
+
+On our near-term roadmap, we have:
+
+Improved snapping and guides for path editing
+
+Crop, scale and resize SVGs
+
+Convert shapes to paths
+
+Boolean operations
+
+In the medium and long term, we have many ideas for advanced vector editing tools. Here are some we’re thinking about:
+
+Mirroring: have your paths mirrored around an axis as you draw them. Useful for drawing symmetrical shapes.
+
+Repeating: repeat shapes in lines, circles, grids, and other arrangements.
+
+Vector networks: draw paths that branch and connect freely.
+
+Anchoring: define vectors relative to other vectors in a non-destructive manner.
+
+Anneal Brush: reshape vector paths with soft, brush-based control.
+
+Shape Builder: merge and trim paths to quickly build shapes.
+
+Here are a few videos demonstrating some of these features we’re working on.
+
+We’d love to
+
+hear your feedback
+
+on the sorts of vector editing tools you’d love to see in
+
+Paper
+
+.
+
+Getting started
+
+Import an SVG
+
+To import an SVG, simply copy it to your clipboard (from a website, design tool, etc.) and paste it into your
+
+Paper
+
+file
+
+(
+
+⌘
+
+V
+
+)
+
+.
+
+Generate an SVG
+
+To generate an SVG, select the “Create SVG” tool
+
+(
+
+⌘
+
+⇧
+
+J
+
+)
+
+. This will open a prompt for you to ask AI to generate an SVG, right in your
+
+Paper
+
+file.
+
+You can also select a frame as context, and ask the AI to generate the SVG based on that selection.
+
+Editing an SVG
+
+Paper
+
+supports editing the contents of your SVG. First, select a layer within your SVG. Then, you can:
+
+move, resize and rotate the layer
+
+adjust fill color, stroke color and stroke thickness
+
+edit paths (see below)
+
+Path editing & pen tool
+
+Paper
+
+supports editing SVG paths. To enter path editing mode, simply double-click on a path, or hit
+
+Enter
+
+with that path selected.
+
+In path editing mode, you can:
+
+use the Pen (
+
+P
+
+) tool to draw new paths segments, and modify existing ones
+
+use the Move (
+
+M
+
+) tool to adjust path control points and segments
+
+To exit path editing mode, double-click on empty space, or hit
+
+esc
+
+.
+
+In addition to editing existing paths, you can draw new paths by selecting the Pen tool
+
+(
+
+P
+
+)
+
+and clicking anywhere:
+
+clicking inside of an SVG creates a new path within that SVG
+
+if your click does not land in an existing SVG, a new SVG will automatically be created to contain your new path
+
+Watch the tutorial ->
+
+Pixel snapping
+
+If you have pixel snapping enabled, points on paths will snap to the nearest half-pixel. You can toggle pixel snapping on and off from the zoom menu in the top right, or by hitting
+
+⌘
+
+⇧
+
+'
+
+.
+
+Keyboard shortcuts cheatsheet
+
+Enter
+
+: enter path editing mode
+
+esc
+
+: exit path editing mode
+
+P
+
+: select the Pen tool
+
+M
+
+: select the Move tool

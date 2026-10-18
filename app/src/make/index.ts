@@ -1,0 +1,11 @@
+export * from './types.ts'
+export * from './manifest.ts'
+export * from './preview-sandbox.ts'
+export * from './assets.ts'
+export * from './breakpoints.ts'
+export * from './validation.ts'
+export * from './data.ts'
+export * from './github.ts'
+export * from './PreviewFrame.tsx'
+// The host-only compiler is imported directly from compiler.ts; keep Node/Vite out of browser bundles.
+export type { CompileResult, CompileDiagnostic, CompileOptions, CompilePreviewAssets } from './compiler.ts'

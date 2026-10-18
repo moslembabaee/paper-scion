@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-paper-canvas: var(--paper-canvas);
+  --color-paper-ink: var(--paper-text);
+  --color-paper-blue: var(--paper-accent-text);
+  --color-paper-blue-deep: var(--paper-accent);
+  --color-paper-charcoal: var(--paper-text-secondary);
+  --color-paper-surface: var(--paper-surface);
+  --color-paper-border: var(--paper-border);
+  --spacing-grid: 120px;
+  --spacing-grid-sub: 24px;
+  --font-sans: "Inter", "Matter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Fira Code", "Cascadia Code", monospace;
+  --ease-paper: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-snap: 120ms;
+  --duration-smooth: 240ms;
+}
+
+/* Colors are applied from the typed palette before React mounts. */
+:root {
+  color-scheme: dark;
+  background: #0c0c0e;
+  --paper-radius-sm: 2px;
+  --paper-radius-md: 4px;
+  --paper-radius-lg: 8px;
+  --paper-radius-xl: 12px;
+}
+:root[data-theme='light'] { color-scheme: light; background: #f8fafc; }
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background: var(--paper-canvas);
+  color: var(--paper-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+input, textarea, select { color: inherit; accent-color: var(--paper-accent); }
+select option { background: var(--paper-surface); color: var(--paper-text); }
+::selection { background: var(--paper-accent-soft); color: var(--paper-text); }
+* { scrollbar-width: thin; scrollbar-color: var(--paper-border-strong) transparent; }
+
+.paper-grid {
+  background-image:
+    linear-gradient(var(--paper-grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-grid-major) 1px, transparent 1px),
+    linear-gradient(var(--paper-grid-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-grid-minor) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+}
+.paper-vertex::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--paper-border-strong) 1px, transparent 1px);
+  background-size: 120px 120px;
+  pointer-events: none;
+}

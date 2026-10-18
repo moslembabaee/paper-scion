@@ -1,0 +1,15 @@
+{
+  "name": "@paper-canvas/mcp-server",
+  "version": "0.1.0",
+  "description": "Standalone stdio MCP server for portable Paper design files",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "bin": { "paper-mcp": "bin/paper-mcp.mjs" },
+  "files": ["bin", "dist", "README.md"],
+  "scripts": {
+    "build": "node ../app/node_modules/typescript/bin/tsc -p ../app/tsconfig.mcp.json",
+    "start": "node bin/paper-mcp.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs"
+  }
+}

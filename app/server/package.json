@@ -1,0 +1,11 @@
+{
+  "name": "paper-cloud",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "fastify": "^5.6.1",
+    "typescript": "~6.0.2",
+    "postcss": "^8.5.29",
+    "playwright": "^1.64.0"
+  }
+}

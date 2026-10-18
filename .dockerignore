@@ -1,0 +1,11 @@
+.git
+app/node_modules
+app/server/node_modules
+app/dist
+app/server/dist
+app/test-results
+app/playwright-report
+mcp-server/dist
+logs
+.env
+.env.*

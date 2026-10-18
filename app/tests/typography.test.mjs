@@ -1,0 +1,180 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import ts from 'typescript'
+import { SceneStore } from '../src/scene/store.ts'
+import { parsePath } from '../src/scene/pathGeometry.ts'
+import { getWorldMatrix } from '../src/scene/geometry.ts'
+import { compileFontVariationSettings, compileTypographyStyles, resolveTextPathD, reversePathD, textAnchorForPath, textPathOffset } from '../src/scene/typography.ts'
+import { sceneToSVG, exportBounds } from '../src/io/svg.ts'
+import { buildCSSProps, buildReactComponent } from '../src/tokens/codegen.ts'
+import { updateTextCurve } from '../src/scene/textPathEditing.ts'
+
+const textScene = () => {
+  const store = new SceneStore()
+  store.add('text', { id: 'text', text: 'A < B & C', width: 360, height: 120 })
+  return store
+}
+const getText = store => store.getSnapshot().elements.text
+const world = (m, p) => ({ x: m[0] * p.x + m[2] * p.y + m[4], y: m[1] * p.x + m[3] * p.y + m[5] })
+
+test('axis settings retain precision and case-sensitive extended tags', () => {
+  const value = compileFontVariationSettings({ wght: 620, wdth: 85, slnt: -12.5, opsz: 32, grad: 10, CASL: .5, "x'y;": 1 })
+  assert.match(value, /'GRAD' 10/)
+  assert.match(value, /'CASL' 0.5/)
+  assert.match(value, /'slnt' -12.5/)
+  assert.doesNotMatch(value, /x'y/)
+  const node = { ...getText(textScene()), variableAxes: { wght: 620, opsz: 32 } }
+  assert.equal(compileTypographyStyles(node).fontWeight, 620)
+  assert.equal(compileTypographyStyles(node).fontOpticalSizing, 'none')
+  assert.match(compileFontVariationSettings({ wght: 620.25, wdth: 85.75 }), /'wght' 620.25, 'wdth' 85.75/)
+})
+
+test('path alignment overrides paragraph alignment and has useful default offsets', () => {
+  assert.equal(textAnchorForPath('start', 'center'), 'start')
+  assert.equal(textAnchorForPath('end', 'center'), 'end')
+  assert.equal(textPathOffset({ ...getText(textScene()), textOnPath: { enabled: true, align: 'center' } }), 50)
+})
+
+test('reversal swaps cubic controls and preserves the seam of closed curves', () => {
+  const reversed = parsePath(reversePathD('M0 0 C10 20 30 40 50 60'))[0].anchors
+  assert.deepEqual({ x: reversed[0].x, y: reversed[0].y }, { x: 50, y: 60 })
+  assert.deepEqual(reversed[0].out, { x: 30, y: 40 })
+  assert.deepEqual(reversed[1].in, { x: 10, y: 20 })
+  const closed = parsePath(reversePathD('M0 0 L100 0 L100 100 Z'))[0]
+  assert.equal(closed.closed, true)
+  assert.deepEqual({ x: closed.anchors[0].x, y: closed.anchors[0].y }, { x: 0, y: 0 })
+})
+
+test('linked curves respect viewBox scaling, nested transforms, moves and edits', () => {
+  const store = textScene()
+  store.add('frame', { id: 'frame', x: 500, y: 220, width: 600, height: 400, rotation: 25 })
+  store.add('path', { id: 'curve', parentId: 'frame', x: 30, y: 40, width: 300, height: 100, rotation: -15, viewBox: [10, 20, 100, 50], d: 'M10 20 C30 10 90 40 110 70' })
+  store.update('text', 'text', { x: 120, y: 80, rotation: 30, textOnPath: { enabled: true, pathId: 'curve' } })
+  const verify = () => {
+    const state = store.getSnapshot(), start = parsePath(resolveTextPathD(getText(store), state.elements))[0].anchors[0]
+    const actual = world(getWorldMatrix(state, 'text'), start)
+    const expected = world(getWorldMatrix(state, 'curve'), { x: 0, y: 0 })
+    assert.ok(Math.hypot(actual.x - expected.x, actual.y - expected.y) < .001)
+  }
+  verify()
+  const before = resolveTextPathD(getText(store), store.getSnapshot().elements)
+  store.update('frame', 'frame', { x: 600 })
+  verify()
+  assert.notEqual(resolveTextPathD(getText(store), store.getSnapshot().elements), before)
+  store.update('curve', 'path', { d: 'M10 20 Q50 100 110 70' })
+  assert.match(resolveTextPathD(getText(store), store.getSnapshot().elements), / C /)
+})
+
+test('presets override stale custom data; missing targets fall back safely', () => {
+  const node = { ...getText(textScene()), textOnPath: { enabled: true, preset: 'arc', pathData: 'M0 0 L1 1', pathId: 'missing' } }
+  assert.match(resolveTextPathD(node, {}), / Q /)
+  node.textOnPath.preset = 'custom'
+  assert.equal(resolveTextPathD(node, {}), 'M0 0 L1 1')
+})
+
+test('typography is immutable, undoable, persisted, and rejects malformed paths atomically', () => {
+  const store = textScene(), axes = { wght: 700, wdth: 80 }, path = { enabled: true, preset: 'wave' }
+  store.update('text', 'text', { variableAxes: axes, textOnPath: path })
+  axes.wght = 200
+  path.enabled = false
+  assert.equal(getText(store).variableAxes.wght, 700)
+  assert.equal(getText(store).textOnPath.enabled, true)
+  const restored = new SceneStore()
+  restored.load(JSON.parse(JSON.stringify(store.toJSON())))
+  assert.deepEqual(getText(restored), getText(store))
+  store.undo()
+  assert.equal(getText(store).variableAxes, undefined)
+  store.redo()
+  assert.equal(getText(store).variableAxes.wght, 700)
+  const before = store.getSnapshot()
+  assert.throws(() => store.update('text', 'text', { textOnPath: { enabled: true, preset: 'custom', pathData: 'bad path' } }))
+  assert.equal(store.getSnapshot(), before)
+})
+
+test('SVG and JSX preserve paths, typography, escaping and unique IDs', () => {
+  const store = textScene()
+  store.update('text', 'text', { variableAxes: { wght: 650, wdth: 80 }, textOnPath: { enabled: true, preset: 'wave', align: 'center', spacing: 2 } })
+  store.add('text', { id: 'other', textOnPath: { enabled: true, preset: 'arc' } })
+  store.select(['text', 'other'])
+  const svg = sceneToSVG(store.getSnapshot(), { scope: 'selection', scale: 1, background: 'transparent' })
+  assert.equal((svg.match(/<textPath /g) ?? []).length, 2)
+  assert.match(svg, /A &lt; B &amp; C/)
+  assert.match(svg, /startOffset="50%"/)
+  assert.match(svg, /font-variation-settings/)
+  const ids = [...svg.matchAll(/<path id="([^"]+)"/g)].map(match => match[1])
+  assert.equal(new Set(ids).size, 2)
+  assert.ok(buildCSSProps(getText(store)).some(prop => prop.property === 'font-variation-settings' && prop.value.includes('650')))
+  const code = buildReactComponent(getText(store), [], undefined, store.getSnapshot().elements)
+  assert.match(code, /useId\(\)/)
+  assert.match(code, /<textPath/)
+  assert.deepEqual(ts.createSourceFile('Text.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX).parseDiagnostics, [])
+})
+
+test('exporting linked text includes the curve outside its original text box', () => {
+  const store = textScene()
+  store.add('path', { id: 'far', x: 1000, width: 300, height: 100, d: 'M0 0 L300 100', viewBox: [0, 0, 300, 100] })
+  store.update('text', 'text', { textOnPath: { enabled: true, pathId: 'far' } })
+  store.select(['text'])
+  const bounds = exportBounds(store.getSnapshot(), 'selection')
+  assert.ok(bounds.x + bounds.width > 1300)
+})
+
+test('editing variable axes releases an inherited typography preset', () => {
+  const store = textScene()
+  const node = getText(store)
+  const preset = store.addSharedStyle({ name: 'Variable headline', kind: 'typography', value: { fontFamily: node.fontFamily, fontSize: node.fontSize, fontWeight: node.fontWeight, lineHeight: node.lineHeight, letterSpacing: node.letterSpacing, textAlign: node.textAlign, variableAxes: { wdth: 80 } } })
+  store.bindSharedStyle('text', 'typography', preset.id)
+  store.update('text', 'text', { variableAxes: { wdth: 120 } })
+  assert.equal(getText(store).variableAxes.wdth, 120)
+  assert.equal(getText(store).sharedStyleBindings?.typography, undefined)
+})
+
+test('malformed linked geometry uses the preset while a path edit is incomplete', () => {
+  const store = textScene()
+  store.add('path', { id: 'draft', d: 'M0 0 C' })
+  store.update('text', 'text', { textOnPath: { enabled: true, pathId: 'draft', preset: 'arc' } })
+  assert.match(resolveTextPathD(getText(store), store.getSnapshot().elements), / Q /)
+})
+
+test('direct deformation becomes a custom curve, retains flow options, and undoes as one gesture', () => {
+  const store = textScene()
+  store.update('text', 'text', { textOnPath: { enabled: true, preset: 'arc', offset: 50, align: 'center', reverse: true, spacing: 2 } })
+  const before = getText(store), count = store.getHistorySnapshot().undoCount
+  store.beginTransaction('Deform text curve')
+  updateTextCurve(store, 'text', 'M0 30 C60 0 160 90 240 30')
+  updateTextCurve(store, 'text', 'M0 30 C60 10 160 90 240 30')
+  store.endTransaction()
+  assert.equal(store.getHistorySnapshot().undoCount, count + 1)
+  assert.deepEqual(getText(store).textOnPath, { ...before.textOnPath, preset: 'custom', pathId: null, pathData: 'M0 30 C60 10 160 90 240 30' })
+  store.undo()
+  assert.deepEqual(getText(store), before)
+  store.redo()
+  assert.equal(getText(store).textOnPath.preset, 'custom')
+  const committed = getText(store)
+  store.beginTransaction('Deform text curve')
+  updateTextCurve(store, 'text', 'M0 30 L240 30')
+  store.cancelTransaction()
+  assert.deepEqual(getText(store), committed)
+})
+
+test('editing a linked baseline preserves placement and updates all followers, respecting locks', () => {
+  const store = textScene()
+  store.add('frame', { id: 'frame', x: 400, y: 120, rotation: 15 })
+  store.add('path', { id: 'curve', parentId: 'frame', x: 20, y: 40, width: 300, height: 100, rotation: -20, viewBox: [0, 0, 300, 100], d: 'M0 30 L240 30' })
+  store.update('text', 'text', { textOnPath: { enabled: true, pathId: 'curve' } })
+  store.add('text', { id: 'follower', textOnPath: { enabled: true, pathId: 'curve' } })
+  const original = store.getSnapshot().elements.curve
+  const before = resolveTextPathD(getText(store), store.getSnapshot().elements)
+  const followerBefore = resolveTextPathD(store.getSnapshot().elements.follower, store.getSnapshot().elements)
+  assert.equal(updateTextCurve(store, 'text', 'M0 30 C60 10 160 90 240 30'), true)
+  const state = store.getSnapshot()
+  assert.deepEqual(state.elements.curve, { ...original, d: 'M0 30 C60 10 160 90 240 30' })
+  assert.notEqual(resolveTextPathD(getText(store), state.elements), before)
+  assert.notEqual(resolveTextPathD(state.elements.follower, state.elements), followerBefore)
+  assert.equal(getText(store).textOnPath.pathId, 'curve')
+  store.setLocked('frame', true)
+  const locked = store.getSnapshot()
+  assert.equal(updateTextCurve(store, 'text', 'M0 0 L100 100'), false)
+  assert.equal(store.getSnapshot(), locked)
+  assert.equal(updateTextCurve(store, 'missing', 'M0 0 L100 100'), false)
+})

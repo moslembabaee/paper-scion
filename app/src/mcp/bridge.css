@@ -1,0 +1,12 @@
+.agent-overlay { position: absolute; inset: var(--ruler-size) 0 0 var(--ruler-size); overflow: hidden; pointer-events: none; z-index: 3; }
+.agent-selection { position: absolute; top: 0; left: 0; transform-origin: 0 0; box-sizing: border-box; border: 1px solid #81adec; box-shadow: 0 0 0 1px #81adec40, 0 0 14px #81adec50; animation: agent-arrive 220ms ease-out; }
+.agent-selection-label { position: absolute; top: -23px; left: -1px; padding: 4px 7px; border-radius: 4px 4px 0 0; background: #81adec; color: #080808; font: 500 10px/14px var(--font-sans, sans-serif); white-space: nowrap; letter-spacing: .02em; box-shadow: 0 -2px 12px #81adec30; }
+.bridge-status { display: inline-flex; align-items: center; gap: 6px; color: var(--paper-text-muted); font-size: 10px; white-space: nowrap; }
+.bridge-status i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .45; }
+.bridge-status[data-connected="true"] i { background: #81adec; opacity: 1; box-shadow: 0 0 6px #81adec60; }
+.bridge-status[data-active="true"] { color: var(--paper-text); }
+.bridge-status[data-active="true"] i { animation: agent-beacon 1.2s ease-in-out infinite; }
+@keyframes agent-arrive { from { opacity: 0; } to { opacity: 1; } }
+@keyframes agent-beacon { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .agent-selection, .bridge-status i { animation: none !important; } }
+@media (max-width: 1100px) { .bridge-status { display: none; } }

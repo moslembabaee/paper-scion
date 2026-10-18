@@ -1,0 +1,36 @@
+.physics-overlay { position: absolute; inset: var(--ruler-size) 0 0 var(--ruler-size); z-index: 3; cursor: grab; touch-action: none; }
+.physics-overlay[data-dragging='true'] { cursor: grabbing; }
+.physics-guides { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.physics-arena { fill: none; stroke: var(--paper-accent-text, #81adec); stroke-opacity: .5; stroke-dasharray: 8 8; vector-effect: non-scaling-stroke; }
+.physics-anchor, .physics-magnet { fill: var(--paper-surface, #edebe1); stroke: var(--paper-accent-text, #81adec); vector-effect: non-scaling-stroke; }
+.physics-magnet { fill: none; stroke-dasharray: 3 3; visibility: hidden; }
+.physics-spring { stroke: var(--paper-accent-text, #81adec); stroke-opacity: .65; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.physics-panel { position: absolute; top: 64px; left: 16px; width: 248px; max-height: calc(100% - 120px); overflow-y: auto; border: 1px solid var(--paper-border-strong); border-radius: 10px; background: var(--paper-surface, #edebe1); color: var(--paper-text, #080808); box-shadow: var(--paper-shadow-panel); padding: 14px; font-size: 11px; }
+.physics-panel header, .physics-panel header span, .physics-actions, .physics-panel label > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.physics-panel header { font-size: 12px; font-weight: 600; }
+.physics-panel button { border: 1px solid var(--paper-border); border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
+.physics-panel header button { display: grid; place-items: center; border: 0; padding: 4px; }
+.physics-panel button:hover { background: var(--paper-hover); }
+.physics-panel :is(button, input):focus-visible { outline: 2px solid var(--paper-accent-text, #81adec); outline-offset: 2px; }
+.physics-status { display: flex; align-items: center; gap: 6px; margin-top: 18px; font: 8px var(--font-mono); letter-spacing: .05em; color: var(--paper-text-secondary); }
+.physics-status > span { width: 5px; height: 5px; border-radius: 50%; background: var(--paper-text-muted); }
+.physics-status > .physics-live { background: #81adec; }
+.physics-status output { margin-left: auto; font-variant-numeric: tabular-nums; }
+.physics-panel p { line-height: 1.6; color: var(--paper-text-secondary); margin: 12px 0; }
+.physics-presets { display: flex; gap: 4px; }
+.physics-presets button { flex: 1; font-size: 10px; padding: 7px 0; }
+.physics-presets button[aria-pressed='true'] { background: #81adec; border-color: #81adec; color: #080808; }
+.physics-parameters { display: grid; gap: 12px; margin: 18px 0; }
+.physics-parameters output { font: 10px var(--font-mono); font-variant-numeric: tabular-nums; }
+.physics-parameters small { color: var(--paper-text-muted); font-size: 9px; }
+.physics-parameters input { display: block; width: 100%; height: 14px; margin: 7px 0 0; accent-color: #81adec; cursor: ew-resize; }
+.physics-options { display: grid; gap: 10px; border-top: 1px solid var(--paper-border); padding-top: 14px; }
+.physics-options label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.physics-options input { accent-color: #81adec; margin: 0; }
+.physics-options label:has(input:disabled) { opacity: .45; cursor: default; }
+.physics-actions { margin-top: 18px; }
+.physics-actions button { display: flex; align-items: center; justify-content: center; gap: 6px; flex: 1; padding: 7px; font-size: 10px; }
+.physics-panel footer { border-top: 1px solid var(--paper-border); margin-top: 14px; padding-top: 10px; font: 8px var(--font-mono); line-height: 1.6; color: var(--paper-text-secondary); }
+.canvas-viewport:has(.physics-overlay) > .viewport-ui { z-index: 4; }
+@media (max-height: 640px) { .physics-panel { top: 56px; max-height: calc(100% - 100px); } }
+@media (max-width: 760px) { .physics-panel { width: 220px; left: 8px; } }

@@ -1,0 +1,79 @@
+Paste
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+paste
+
+Paste into Paper
+
+Paste different kinds of content into
+
+Paper
+
+such as Figma, HTML, and more using the context menu and the Paste (
+
+⌘
+
+V
+
+) hotkey.
+
+For more advanced use cases you can also use Paste on top (
+
+⌘
+
+V
+
+) and Paste to replace (
+
+⌘
+
+R
+
+).
+
+Overview
+
+What you can paste
+
+Paper
+
+supports all common content types like images, SVG, and text. In addition, you can paste content from Figma and HTML.
+
+Follow the links below to learn how to paste from Figma and HTML.
+
+Figma
+
+Paste from Figma
+
+→
+
+Bring designs from Figma into Paper with a copy and paste
+
+HTML
+
+Paste from HTML
+
+→
+
+Paste HTML into Paper as editable layers

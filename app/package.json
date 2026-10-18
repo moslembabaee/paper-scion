@@ -1,0 +1,41 @@
+{
+  "name": "app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.mjs && npm run test:cloud",
+    "test:e2e": "playwright test",
+    "dev": "vite",
+    "build": "tsc -b && vite build && npm run build:mcp && npm run build:server",
+    "build:mcp": "tsc -p tsconfig.mcp.json",
+    "mcp": "node ../mcp-server/bin/paper-mcp.mjs",
+    "test:mcp": "npm --prefix ../mcp-server test",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "bridge": "node ../mcp-server/dist/mcp/bridge-cli.js",
+    "build:server": "tsc -p tsconfig.server.json && node server/build-preview-runtime.mjs",
+    "test:cloud": "npm run build:server && node --test server/tests/*.test.mjs",
+    "dev:server": "node server/dist/server/index.js"
+  },
+  "dependencies": {
+    "@paper-design/shaders-react": "^0.0.81",
+    "@tailwindcss/vite": "^4.3.3",
+    "lucide-react": "^1.55.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "playwright": "^1.64.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "postcss": "^8.5.29"
+  }
+}

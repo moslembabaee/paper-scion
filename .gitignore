@@ -1,0 +1,30 @@
+# Logs
+logs/
+*.log
+
+# Deployment & Cache
+.last_deployed_commit
+/tmp/paper_deploy.lock
+STOP_IMPROVEMENTS
+
+# Python
+__pycache__/
+*.py[cod]
+ROADMAP.json.lock
+
+# Scion Multi-Agent
+.scion/agents/
+.scion/cache/
+.scion/*.db
+.scion/*.log
+
+# Node / Dependencies
+app/node_modules/
+mcp-server/node_modules/
+dist/
+brag-output/
+
+.env
+.env.*
+!.env.example
+app/server/node_modules/

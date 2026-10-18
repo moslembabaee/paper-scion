@@ -1,0 +1,230 @@
+Using Paper Snapshot with local images · Paper
+
+Support
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+support
+
+FAQ & Troubleshooting
+
+Using
+
+Paper
+
+Snapshot with local images
+
+To capture images running on your local server with
+
+Paper
+
+Snapshot your development server must allow
+
+cross-origin requests
+
+. By default most development servers block them.
+
+Here’s how to configure the most common development tools so you can capture images when pasted into
+
+Paper
+
+.
+
+Astro
+
+Astro wraps Vite, and (since 5.14) also enforces its own host check. You need both.
+
+astro.config.mjs
+
+:
+
+import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  security: {
+    allowedDomains: [{ hostname: 'app.paper.design' }],
+  },
+  vite: {
+    server: {
+      cors: { origin: 'https://app.paper.design' },
+    },
+  },
+});
+
+Run with
+
+astro dev --host
+
+if you need it reachable from other machines.
+
+Django
+
+settings.py
+
+(with
+
+django-cors-headers
+
+):
+
+INSTALLED_APPS = [..., "corsheaders"]
+MIDDLEWARE = ["corsheaders.middleware.CorsMiddleware", ...]
+CORS_ALLOWED_ORIGINS = ["https://app.paper.design"]
+
+Express
+
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors({ origin: 'https://app.paper.design' }));
+
+Fastify
+
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+
+const app = Fastify();
+await app.register(cors, { origin: 'https://app.paper.design' });
+
+Flask
+
+from flask import Flask
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app, origins=["https://app.paper.design"])
+
+Next.js
+
+Next has no per-request CORS toggle — you set headers per route via
+
+next.config.js
+
+:
+
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: 'https://app.paper.design',
+          },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS' },
+          { key: 'Vary', value: 'Origin' },
+        ],
+      },
+    ];
+  },
+};
+
+Nuxt
+
+nuxt.config.ts
+
+:
+
+export default defineNuxtConfig({
+  vite: {
+    server: {
+      cors: { origin: 'https://app.paper.design' },
+    },
+  },
+  routeRules: {
+    '/**': {
+      headers: {
+        'Access-Control-Allow-Origin': 'https://app.paper.design',
+      },
+    },
+  },
+});
+
+Rails
+
+Gemfile
+
+:
+
+gem "rack-cors"
+
+config/initializers/cors.rb
+
+:
+
+Rails.application.config.middleware.insert_before 0, Rack::Cors do
+  allow do
+    origins "https://app.paper.design"
+    resource "*", headers: :any, methods: [:get, :options]
+  end
+end
+
+Vite / Remix / SvelteKit
+
+vite.config.{js,ts}
+
+:
+
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  server: {
+    cors: {
+      origin: 'https://app.paper.design',
+    },
+  },
+});
+
+Vite 6+ also blocks cross-origin subresource requests to
+
+/@fs/
+
+paths regardless of CORS. If you hit
+
+Blocked cross-origin request to /@fs/...
+
+, serve the asset from
+
+public/
+
+instead, or add a plugin that strips
+
+Sec-Fetch-*
+
+headers for those requests.
+
+Webpack
+
+webpack.config.js
+
+:
+
+module.exports = {
+  devServer: {
+    headers: {
+      'Access-Control-Allow-Origin': 'https://app.paper.design',
+    },
+  },
+};

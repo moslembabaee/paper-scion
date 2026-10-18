@@ -1,0 +1,51 @@
+services:
+  paper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: server
+    image: paper:latest
+    container_name: paper
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:80"
+    depends_on:
+      paper-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+  paper-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    image: paper-api:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PAPER_DATA_DIR: /data
+      PAPER_PUBLIC_URL: ${PAPER_PUBLIC_URL:-http://localhost:3000}
+      PAPER_SESSION_SECRET: ${PAPER_SESSION_SECRET:?Set PAPER_SESSION_SECRET in .env to a private persistent secret of at least 32 characters}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+    volumes:
+      - paper_projects:/data
+    expose:
+      - "3001"
+    init: true
+    stop_grace_period: 15s
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+volumes:
+  paper_projects:
+    driver: local

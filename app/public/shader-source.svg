@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="640" viewBox="0 0 960 640">
+  <defs>
+    <linearGradient id="paper"><stop stop-color="#edebe1"/><stop offset="1" stop-color="#81adec"/></linearGradient>
+    <radialGradient id="blue"><stop stop-color="#81adec"/><stop offset="1" stop-color="#222222"/></radialGradient>
+  </defs>
+  <path fill="url(#paper)" d="M0 0h960v640H0z"/>
+  <circle fill="url(#blue)" cx="400" cy="320" r="260"/>
+  <circle fill="#db7d98" cx="690" cy="250" r="150"/>
+  <path fill="#e8c873" d="M540 390h240v240H540z"/>
+</svg>

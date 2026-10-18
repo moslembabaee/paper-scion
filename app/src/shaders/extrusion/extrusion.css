@@ -1,0 +1,291 @@
+/* Paper Craft 3D Vector Extrusion & Directional Shadow Lighting Styles */
+
+.extrusion-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: #edebe1;
+  font-family: inherit;
+}
+
+.extrusion-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #81adec;
+  margin-top: 4px;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.preset-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #141414;
+  border: 1px solid #222222;
+  border-radius: 6px;
+  color: #edebe1;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.preset-card:hover {
+  background: #1c1c1c;
+  border-color: #81adec;
+}
+
+.preset-preview-chip {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1.5px solid;
+  flex-shrink: 0;
+}
+
+.preset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slider-unit {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.extrusion-color-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.color-label {
+  font-size: 11px;
+  color: #edebe1;
+}
+
+.color-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.color-hex-input {
+  width: 72px;
+  height: 24px;
+  background: #141414;
+  border: 1px solid #222222;
+  border-radius: 4px;
+  color: #edebe1;
+  font-family: monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  padding: 0 6px;
+  text-align: center;
+}
+
+.color-hex-input:focus {
+  border-color: #81adec;
+  outline: none;
+}
+
+/* Canvas Overlay & Interactive Handles */
+.extrusion-canvas-overlay {
+  user-select: none;
+}
+
+.extrusion-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.extrusion-handle:active {
+  cursor: grabbing;
+}
+
+.extrusion-light-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #080808;
+  border: 1.5px solid #81adec;
+  border-radius: 14px;
+  color: #edebe1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 12px rgba(129, 173, 236, 0.35);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.extrusion-light-handle.is-active .extrusion-light-chip,
+.extrusion-light-chip:hover {
+  transform: scale(1.08);
+  border-color: #edebe1;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 18px rgba(129, 173, 236, 0.6);
+}
+
+.sun-icon {
+  color: #81adec;
+}
+
+.light-azimuth-label {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.extrusion-elevation-badge {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  background: #1a1a1a;
+  border: 1px solid #81adec;
+  border-radius: 10px;
+  color: #81adec;
+  font-size: 9px;
+  font-family: monospace;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.extrusion-shadow-tip {
+  width: 10px;
+  height: 10px;
+  background: #080808;
+  border: 2px solid #81adec;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(129, 173, 236, 0.5);
+  transition: transform 0.15s ease;
+}
+
+.extrusion-shadow-tip:hover {
+  transform: scale(1.3);
+  background: #81adec;
+}
+
+.extrusion-bevel-marker {
+  width: 18px;
+  height: 18px;
+  background: #141414;
+  border: 1.5px solid #81adec;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #edebe1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: ew-resize;
+  transition: transform 0.15s ease;
+}
+
+.extrusion-bevel-marker:hover {
+  transform: scale(1.15);
+  background: #222222;
+}
+
+/* Floating HUD */
+.extrusion-hud {
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+}
+
+.extrusion-hud-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #080808;
+  border: 1px solid #222222;
+  border-radius: 20px;
+  color: #edebe1;
+  font-size: 11px;
+}
+
+.extrusion-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #81adec;
+}
+
+.hud-icon {
+  color: #81adec;
+}
+
+.extrusion-hud-stats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-pill {
+  background: #141414;
+  border: 1px solid #222222;
+  border-radius: 10px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-family: monospace;
+}
+
+.hud-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1c1c1c;
+  border: 1px solid #333333;
+  border-radius: 10px;
+  padding: 2px 8px;
+  color: #edebe1;
+  font-size: 9px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.hud-mode-toggle:hover {
+  background: #252525;
+  border-color: #81adec;
+}
+
+.mode-label {
+  text-transform: capitalize;
+}
+
+.hud-close-btn {
+  background: none;
+  border: none;
+  color: #888888;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s ease;
+}
+
+.hud-close-btn:hover {
+  color: #edebe1;
+}

@@ -1,0 +1,9 @@
+.measurement-hud { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.measurement-target { fill: none; stroke: #81adec; stroke-width: 1; stroke-dasharray: 3 2; }
+.distance-guide { color: #e45454; }
+.distance-guide.is-aligned { color: #81adec; }
+.distance-guide line, .distance-guide path { fill: none; stroke: currentColor; stroke-width: 1; }
+.distance-guide .measurement-projection { stroke-dasharray: 2 3; opacity: .55; }
+.measurement-badge { fill: currentColor; stroke: var(--paper-surface); stroke-width: 1; }
+.distance-guide text { fill: #fff; font: 10px var(--font-mono); font-variant-numeric: tabular-nums; }
+.distance-guide.is-aligned text { fill: #080808; }

@@ -1,0 +1,937 @@
+MCP
+
+pricing
+
+roadmap
+
+blog
+
+changelog
+
+docs
+
+sign up
+
+open Paper
+
+→
+
+← back
+
+docs
+
+/
+
+mcp
+
+Paper MCP Server
+
+Use the Paper MCP server to connect AI agents with your design file
+
+AI agents can read and write your
+
+Paper
+
+files through MCP—generate a layout, pull in real content, or turn a selected frame into code.
+
+Paper
+
+is built on HTML and CSS, which LLMs already understand well, so
+
+Paper
+
+MCP is usually more accurate, faster, and more token-efficient than using other design tools with agents.
+
+Getting started
+
+1. Download the
+
+Paper
+
+Desktop app
+
+First, install and open
+
+Paper Desktop
+
+. That starts the MCP server in the background and installs the
+
+Paper
+
+CLI used to connect agents.
+
+2. Install your agent
+
+Then, open the
+
+Connect your agent
+
+dialog via the callout in the top right corner of the editor, or from the MCP panel on the right (make sure you don’t have any element selected for this panel to show).
+
+Then, pick your agent and click
+
+Add to {agent}
+
+. If you need them, manual steps for each agent are also available in the setup dialog, and below.
+
+Agent
+
+Install via
+
+After installing
+
+Notes
+
+Claude
+
+One-click app extension, local config
+
+Restart Claude Code
+
+Installs to both Claude and Claude Code
+
+Codex
+
+One-click local config
+
+Open Codex CLI
+
+Installs to both ChatGPT and Codex CLI
+
+Cursor
+
+Marketplace plugin
+
+—
+
+—
+
+OpenCode
+
+One-click local config
+
+Restart OpenCode
+
+—
+
+Antigravity
+
+One-click local config
+
+Restart Antigravity
+
+Same config for all Antigravity products
+
+GitHub Copilot
+
+One-click local config
+
+—
+
+GitHub Copilot app, not VS Code
+
+VS Code
+
+One-click editor install
+
+Start the
+
+Paper
+
+server when prompted
+
+—
+
+Other agents
+
+Manual stdio config
+
+Restart your agent
+
+—
+
+Connect to Cursor
+
+Add
+
+Paper
+
+from the
+
+Cursor Marketplace
+
+, or click
+
+Add to Cursor
+
+in the Paper Desktop MCP panel.
+
+Once connected,
+
+Paper
+
+should appear in Cursor Settings -> Tools & MCP. Reload the window or toggle the server if the agent cannot see it yet.
+
+Or, install manually
+
+Run this in the agent panel:
+
+/add-plugin paper-desktop
+
+Check Cursor Settings → Tools & MCP. Reload or toggle the server if needed.
+
+Connect to Claude
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to Claude
+
+. This installs Paper for both Claude and Claude Code:
+
+Claude:
+
+installs the extension for the Chat tab. Confirm the install when Claude prompts you (on Linux, restart Claude instead). If Claude isn’t installed, this step is skipped.
+
+Claude Code:
+
+installs the MCP server for Claude’s Code tab and the Claude Code CLI. Restart Claude Code, then run the
+
+/mcp
+
+command to check that
+
+Paper
+
+appears.
+
+Or, install manually
+
+Claude
+
+Download the
+
+.mcpb extension
+
+In Claude, go to Settings → Extensions → Advanced settings → Install extension
+
+Select the downloaded
+
+.mcpb
+
+extension
+
+Claude Code
+
+Run this in your terminal to install the
+
+Paper
+
+plugin, then open Claude Code:
+
+claude plugin marketplace add paper-design/agent-plugins && claude plugin install paper-desktop@paper
+
+Connect to GitHub Copilot
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to GitHub Copilot
+
+.
+
+This is the GitHub Copilot app, not VS Code. For the IDE, see
+
+Connect to VS Code
+
+.
+
+Or, install manually
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+In the GitHub Copilot app, go to Customize → Add → MCP Server
+
+In the Name field, enter
+
+Paper
+
+In the Command field, paste the path you copied
+
+In the Arguments field, enter
+
+mcp
+
+Click Add server
+
+Connect to VS Code
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to VS Code
+
+. Start the Paper server when VS Code prompts you.
+
+Or, install manually
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+Add this to
+
+.vscode/mcp.json
+
+in your workspace, using that path as
+
+command
+
+:
+
+{
+  "servers": {
+    "paper": {
+      "type": "stdio",
+      "command": "/path/to/paper",
+      "args": ["mcp"]
+    }
+  }
+}
+
+Start the server from the editor.
+
+Connect to OpenCode
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to OpenCode
+
+. Restart OpenCode.
+
+You can also run
+
+opencode mcp list
+
+in the terminal to confirm
+
+Paper
+
+is installed.
+
+Or, install manually
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+Add
+
+Paper
+
+as a local MCP server in
+
+opencode.json
+
+(or
+
+opencode.jsonc
+
+, if that file already exists), using that path as the first
+
+command
+
+value:
+
+{
+  "mcp": {
+    "paper": {
+      "type": "local",
+      "command": ["/path/to/paper", "mcp"],
+      "enabled": true
+    }
+  }
+}
+
+Connect to Codex
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to Codex
+
+. The ChatGPT app and Codex CLI share the same config, so this installs Paper for both. Then, create a new chat in ChatGPT’s Codex tab, or open Codex CLI.
+
+Or, install manually
+
+ChatGPT
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+In the ChatGPT app, go to Settings → Plugins → Add → Add MCP server
+
+In the Name field, enter
+
+Paper
+
+In the Command to launch field, paste the path you copied
+
+In the Arguments field, enter
+
+mcp
+
+Click Save
+
+Create a new chat in the Codex tab
+
+Codex CLI
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+Run this in your terminal, using that path in place of
+
+/path/to/paper
+
+:
+
+codex mcp add paper -- /path/to/paper mcp
+
+Open Codex CLI.
+
+Connect to Antigravity
+
+In
+
+Paper
+
+Desktop, open the MCP panel and click
+
+Add to Antigravity
+
+. Then, restart Antigravity. This will install the MCP server for all Antigravity products.
+
+Or, install manually
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+Add
+
+Paper
+
+to Antigravity’s MCP config, using that path as
+
+command
+
+:
+
+{
+  "mcpServers": {
+    "paper": {
+      "type": "stdio",
+      "command": "/path/to/paper",
+      "args": ["mcp"]
+    }
+  }
+}
+
+Connect to other agents
+
+In
+
+Paper
+
+Desktop, open the MCP panel and copy the
+
+Paper
+
+CLI path.
+
+Add
+
+Paper
+
+to your agent MCP config as a stdio server, using that path as
+
+command
+
+. Check that agent’s docs if the shape of the file is different.
+
+{
+  "mcpServers": {
+    "paper": {
+      "type": "stdio",
+      "command": "/path/to/paper",
+      "args": ["mcp"]
+    }
+  }
+}
+
+3. Run your first prompt
+
+Create a new file in
+
+Paper
+
+, then run any of these example prompts to test that the connection is working:
+
+Create a basic Hello World frame in Paper
+
+Create 3 color tokens and make a swatch in Paper
+
+Generate an image of a beautiful sunset in Paper
+
+The agent should ask for permission to use the
+
+Paper
+
+MCP server. You should see the result appear in the open file.
+
+Updating from an older setup
+
+Older docs and configs connected over Streamable HTTP at
+
+http://127.0.0.1:29979/mcp
+
+(including
+
+mcp-remote
+
+and
+
+claude mcp add --transport http
+
+).
+
+Paper
+
+Desktop still serves that endpoint while a file is open, so an existing HTTP setup will keep working.
+
+The Connect your agent dialog now installs
+
+stdio
+
+via the
+
+Paper
+
+CLI (
+
+paper mcp
+
+) for Claude Code, Codex, Copilot, VS Code, OpenCode, and Antigravity. Cursor and Claude still install through each product’s plugin or extension.
+
+Why switch
+
+HTTP only works while Desktop is open and reachable at that localhost URL.
+
+paper mcp
+
+sits between your agent and Desktop:
+
+Your agent can see
+
+Paper
+
+’s tools and instructions even when Desktop is closed, so new chats start instead of failing to connect.
+
+Once Desktop is running, reads and writes still go to the open file, same as before.
+
+You don’t have to paste a localhost URL or run
+
+mcp-remote
+
+. Opening
+
+Paper
+
+Desktop installs the CLI for you.
+
+Do I need to update?
+
+Stay as you are if you already use:
+
+The Cursor marketplace plugin or
+
+/add-plugin paper-desktop
+
+The Claude Code plugin (
+
+paper-desktop@paper
+
+)
+
+The Claude
+
+.mcpb
+
+Chat tab extension
+
+These plugins have been updated to use the new
+
+Paper
+
+CLI.
+
+Otherwise, you should update your config to use the new
+
+Paper
+
+CLI.
+
+How to update
+
+Remove the old HTTP,
+
+mcp-remote
+
+, or remote-URL
+
+Paper
+
+entry so you do not end up with two
+
+Paper
+
+servers.
+
+Make sure
+
+Paper
+
+Desktop is up to date (About -> Check for updates) and open a file.
+
+Open the MCP panel, pick your agent, and click
+
+Add to {agent}
+
+.
+
+Errors and troubleshooting
+
+tl;dr:
+
+The most common cause of issues is really long running agent sessions.
+Whenever you run into an issue, first start by restarting the agent session which will re-establish the connection to
+the MCP server.
+
+You might also run into issues connecting your tool of choice to the MCP in the first place. Often times this requires restarting the tool acting as the MCP host, so it correctly picks up the new MCP server. This is also the best course of action if the MCP is shown as connected but your agent is saying it doesn’t have access to the MCP in the current session.
+
+Because LLMs are not deterministic, they can occasionally hallucinate the tools that are available to them. If you’re seeing a lot of tool calling errors in your agent chat this is because the agent can get the parameters for the tool call wrong, even though they have access to the schema. Once again, the best fix is to turn everything off and then turn it back on again.
+
+If you need to debug some MCP connection issues, you can ask the agent to help you troubleshoot using the link to this documentation as some added context.
+
+After upgrading MCP limits aren’t reset
+
+There was an issue in some versions where the limit wouldn’t be refreshed after upgrading to Pro. Make sure
+
+Paper
+
+Desktop is updated to latest
+
+About > Check for updates
+
+and then restart the app.
+
+Windows WSL
+
+If your agent runs inside Windows Subsystem for Linux (WSL), it may not reach
+
+Paper
+
+Desktop on Windows.
+Try enabling
+
+mirrored mode networking
+
+and try again.
+
+Go to WSL settings
+
+Go to Networking
+
+Change
+
+networkingMode
+
+to
+
+mirrored
+
+Restart WSL and try connecting to the MCP server again
+
+Guides
+
+Syncing tokens from Figma
+
+It can be useful to move things like colors and text styles that you already have set up in Figma into
+
+Paper
+
+so you can use them in your designs. To do this, you need to make sure you have the
+
+Figma MCP server
+
+installed and set up in the same IDE or CLI tool that you have the Paper MCP server installed in.
+
+Both the
+
+Paper
+
+MCP and Figma MCP servers use the currently opened file as context, so you need to make sure you have the correct files set up in both apps.
+You can always ask the agent to tell you what files it sees open in either app to verify that things are working correctly
+
+For our example, we have a small design system set up in Figma that uses a mix of variables and styles and we want to add that information to
+
+Paper
+
+.
+
+There are some quirks to working with variables or styles in Figma. You need to make sure you have an element selected in Figma that has a variable or style assigned to it. Once you have that, you can ask the agent to create a design system in
+
+Paper
+
+that matches the Figma file and just let it do the work.
+
+Your agent will ask for permission when it wants to call tools associated with both MCP servers — the Figma MCP server is read only so it’s usually okay to grant it ‘always allow’ permissions. The
+
+Paper
+
+MCP can read and write, so make sure you’re comfortable with the agent being able to manipulate this specific design file.
+
+The agent will then create a design system sticker sheet in
+
+Paper
+
+based on the design system in Figma:
+
+Here are some gotchas to watch out for when working with the Figma MCP server:
+
+It will typically return SVG fills as images and if the SVG is a component instance it tends not to respect any color overrides applied to the component.
+
+Agents also ignore things like spacer elements that are used to fill in gaps in layouts so you might notice the spacing looks a bit off.
+
+There are some design elements in Figma that don’t translate well to
+
+Paper
+
+, like inset borders not being converted to outlines.
+
+Code connected components in Figma are not reliably converted to
+
+Paper
+
+.
+
+Some very large and deeply nested designs can cause errors with the Figma MCP tool calls. You can try to get around this by asking the agent to break down the design into smaller parts and iterate on each part individually.
+
+Using real content from Notion
+
+Designing with placeholder content sucks, but not as much as manually typing out the real content. With the MCP server you can pull real world content into your designs from multiple sources, like Notion for example.
+
+To get started, you need to make sure you have the
+
+Notion MCP server
+
+installed and set up in the same IDE or CLI tool that you have the
+
+Paper
+
+MCP server installed in.
+
+For our example, we have a testimonial section in
+
+Paper
+
+with some Lorem Ipsum placeholder content and a Notion database
+with a bunch of real testimonials. We can ask the agent to pull in the testimonials from the Notion database and use
+them in the testimonial section in
+
+Paper
+
+.
+
+To make it easier, select the testimonial frame in
+
+Paper
+
+and then ask the agent to “sync the content from the Notion Testimonials database with this frame”.
+
+The agent will ask for some permissions to grab the content from Notion and then begin updating the testimonial section in
+
+Paper
+
+with the real content.
+
+We can take this a step further and ask the agent to translate the content so we can test how the design holds up in different languages, like German or Spanish.
+
+This really just scratches the surface of what’s possible when you can use real data sources in your designs.
+
+Building a website from a design
+
+It’s never been easier to turn your designs into real websites with
+
+Paper
+
+and AI agents. Because
+
+Paper
+
+is based on web technology it’s really easy for agents to translate your designs into code.
+
+Here we have a design for a landing page hero section and we want to make it into a real website:
+
+First, we’re going to make a new folder somewhere on our computer and then make sure we open our agent tool of choice in that folder.
+
+Before we get started, it’s important to remember that when going from design to code, you’ll get the best results if the structure of your design is already optimized for code. In
+
+Paper
+
+, this means using flex layouts and containers so that the agent can easily understand the layout of the design.
+
+We’re going to ask our agent to use React and Tailwind, which are two technologies the agent is very familiar with, but you can really choose any technologies you want. In
+
+Paper
+
+, make sure you have the frame selected that you want the agent to build before entering your prompt.
+
+I'd like you to build a website in this folder using the hero section I have selected in Paper. Use React and Tailwind for the styling.
+
+Straight away, the agent will ask for permission to call some
+
+Paper
+
+MCP tools to examine the design. Because these are read only tools, it’s usually okay to grant it ‘always allow’ permissions. While it’s examining the frame, you’ll get some visual feedback in
+
+Paper
+
+.
+
+After the agent has examined the design, it will ask for permission to call some more commands to build the website in the new folder. Because it’s a new folder that we’ve set up just for this project it’s fine to grant it ‘always allow’ permissions, but if you’re working in an existing project you might want to be more selective about which permissions you grant.
+
+This whole process will take a few minutes and depending on your tooling, you might need to babysit the agent to give it permissions.
+
+If you are new to web development, the result might be a bit confusing. When the agent is done, it will likely run some commands like
+
+npm run dev
+
+which starts up a local development server on your computer. This server has a weird URL, usually something like
+
+http://localhost:5173
+
+or
+
+http://localhost:3000
+
+, which you can open in your browser to see the website.
+
+This website isn’t live — it’s running locally on your computer so that when you make changes to the code, you can see the changes immediately in the browser.
+
+Our agent got pretty close to our original design, largely because the file we gave it was well structured and the hero frame was relatively small. The larger the thing you’re trying to build, the more likely the agent will get stuff wrong so it makes sense to start with a small part of the design and then build up from there.
+
+This seems like a good point to make a checkpoint, so we’ll ask the agent to set up git in this folder and commit the changes we’ve made so far.
+
+Can you add git to this folder and commit the changes we've made so far?
+
+If you’re new to git, it’s a version control system that allows you to track changes to your code and revert to previous versions if needed. Every time we want to make a substantial change to the website, we’ll commit our changes so we can revert to a previous version if needed.
+
+If we want to go back to a previous version, we can ask the agent to simply check out that commit and the website will be exactly as it was at that point in time. Bigger changes can be put onto new branches and merged back into the main branch when ready, so that we can keep our changes isolated from the main codebase.
+
+Our website isn’t really that responsive yet, so we’ll ask the agent to make it responsive based on some other frames we have set up in
+
+Paper
+
+.
+
+Can you add some responsive breakpoints to the website based on the frames I have selected in Paper? Each frame is a different breakpoint.
+
+After a bit of back and forth adjusting a few things, our website is now responsive and looks great on all devices.
+
+We can ask the agent to commit the changes we’ve made so far and then we can deploy the website to a hosting provider.
+
+And that’s it — building out the rest of the website is a matter of asking the agent to continue building out the other sections based on the designs we have set up in
+
+Paper
+
+. Happy prompting.
+
+Addendum
+
+What is an MCP server?
+
+You can think of an MCP (Model Context Protocol) server as an authenticated API that an LLM can use to access data from a specific platform or application. In
+
+Paper
+
+, that means you can use an AI agent to read and write to your design files.
+
+Why is this useful? Well if you’re using an agent to build your design through something like Cursor or Claude Code, it can now use your design files as context. Because
+
+Paper
+
+is based on web technology and LLMs are really good at understanding the DOM, the results can be impressive.
+
+Because the
+
+Paper
+
+MCP supports both reading and writing to your files you can use the MCP server to pull context from other sources into your design files. This unlocks a bunch of workflows that were previously tedious to carry out, like syncing tokens from your design system or using real content for your designs.
