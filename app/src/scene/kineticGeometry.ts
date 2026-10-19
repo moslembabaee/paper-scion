@@ -81,7 +81,11 @@ export function placeGlyphs(node: TextElement, shaped: ShapedText, unitsPerEm: n
   const result: GlyphPlacement[] = []
   let index = 0
   shaped.lines.forEach((line, lineIndex) => {
-    let cursor = baseline ? baseline.length * textPathOffset(node) / 100 - (anchor === 'middle' ? line.width / 2 : anchor === 'end' ? line.width : 0)
+    const startOffsetPx = node.textOnPath?.offsetMode === 'pixels' && node.textOnPath.offset !== undefined
+      ? node.textOnPath.offset
+      : baseline ? (baseline.length * textPathOffset(node)) / 100 : 0
+    let cursor = baseline
+      ? startOffsetPx - (anchor === 'middle' ? line.width / 2 : anchor === 'end' ? line.width : 0)
       : node.textAlign === 'center' ? (node.width - line.width) / 2 : node.textAlign === 'right' ? node.width - line.width : 0
     line.glyphs.forEach(glyph => {
       const center = cursor + glyph.advance / 2
@@ -165,8 +169,11 @@ export function glyphOutlines(glyphs: readonly GlyphPlacement[], kinetic?: Kinet
     const angle = glyph.angle * Math.PI / 180, cos = Math.cos(angle), sin = Math.sin(angle)
     const spin = offset.angle * Math.PI / 180, sc = Math.cos(spin), ss = Math.sin(spin)
     const effectiveScale = glyph.scale * (offset.scale ?? 1)
+    const slantAngle = offset.slantDelta ?? 0
+    const slantShear = slantAngle !== 0 ? Math.tan((-slantAngle * Math.PI) / 180) : 0
     const transform = (point: Point): Point => {
-      const gx = point.x * effectiveScale + glyph.origin + glyph.dx, gy = -point.y * effectiveScale + glyph.dy
+      const gx = point.x * effectiveScale + slantShear * (-point.y * effectiveScale) + glyph.origin + glyph.dx
+      const gy = -point.y * effectiveScale + glyph.dy
       const x = gx * sc - gy * ss + (offset.x ?? 0), y = gx * ss + gy * sc + offset.y
       return { x: glyph.x + x * cos - y * sin, y: glyph.y + x * sin + y * cos }
     }
