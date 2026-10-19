@@ -608,6 +608,8 @@ export interface SceneDocument {
   readonly tokens?: readonly DesignToken[]
   readonly styleLibrary?: StyleLibrary
   readonly backgroundShader?: ShaderPaint | null
+  /** Multi-layer composited canvas background shaders with individual blend modes. */
+  readonly backgroundLayers?: readonly ShaderPaint[] | null
   /** Active physics simulation document. Absent means the simulation layer is disabled. */
   readonly physics?: PhysicsDocument
   readonly componentRegistry?: ComponentRegistry

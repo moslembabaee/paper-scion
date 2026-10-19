@@ -127,6 +127,10 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
   const elements = useScene(store, state => state.elements)
   const rootIds = useScene(store, state => state.rootIds)
   const backgroundShader = useScene(store, state => state.backgroundShader)
+  const backgroundLayers = useScene(store, state => state.backgroundLayers)
+  const activeBackgroundLayers = (backgroundLayers && backgroundLayers.length > 0)
+    ? backgroundLayers
+    : (backgroundShader ? [backgroundShader] : [])
   const selection = useScene(store, state => state.selection)
   const items = useMemo(() => {
     const state = store.getSnapshot()
@@ -156,7 +160,24 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
   const bounds = useMemo(() => unionBounds(items), [items])
   return (
     <div ref={hostRef} style={{ display: 'contents' }}>
-      <CanvasViewport controller={controller} initialCamera={initialCamera} contentBounds={bounds} minimapItems={items} gridVisible={grid} panMode={panMode} onSelectFrame={(id) => store.select([id])} background={backgroundShader && <ShaderSurface paint={backgroundShader} />} overlay={<>{collaboration && <CollaborationOverlay session={collaboration} store={store} controller={controller} />}<AgentOverlay store={store} controller={controller} activity={agentActivity} />{annotationOverlay}{commentMode ? null : prototypeOverlay ?? (physicsMode ? <PhysicsOverlay store={store} controller={controller} onExit={onExitPhysicsMode} /> : interactiveMode ? <InteractiveCanvasOverlay store={store} controller={controller} onExit={onExitInteractiveMode} /> : !panMode && (penMode || (editingId && elements[editingId]?.type === 'path' && !store.isLocked(editingId) && store.isVisible(editingId))) ? <PenOverlay key={`${editingId ?? 'new'}-${penMode}`} store={store} controller={controller} editingId={editingId} penMode={penMode} onFinish={() => { setEditingId(null); onExitPen?.() }} /> : <><SelectionOverlay store={store} controller={controller} panMode={panMode} onEditPath={enterPath} />{!panMode && <MeshCanvasOverlay store={store} controller={controller} />}{!panMode && <GradientCanvasOverlay store={store} controller={controller} />}{!panMode && <MaskCanvasOverlay store={store} controller={controller} />}</>)}</>}>
+      <CanvasViewport controller={controller} initialCamera={initialCamera} contentBounds={bounds} minimapItems={items} gridVisible={grid} panMode={panMode} onSelectFrame={(id) => store.select([id])} background={activeBackgroundLayers.length > 0 && (
+        <div className="canvas-background-layers" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'hidden', pointerEvents: 'none' }}>
+          {activeBackgroundLayers.map((layer, index) => (
+            <ShaderSurface
+              key={`bg-layer-${index}-${layer.kind}`}
+              paint={layer}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                mixBlendMode: layer.composite?.blendMode ?? 'normal',
+                opacity: layer.composite?.opacity ?? 1,
+              }}
+            />
+          ))}
+        </div>
+      )} overlay={<>{collaboration && <CollaborationOverlay session={collaboration} store={store} controller={controller} />}<AgentOverlay store={store} controller={controller} activity={agentActivity} />{annotationOverlay}{commentMode ? null : prototypeOverlay ?? (physicsMode ? <PhysicsOverlay store={store} controller={controller} onExit={onExitPhysicsMode} /> : interactiveMode ? <InteractiveCanvasOverlay store={store} controller={controller} onExit={onExitInteractiveMode} /> : !panMode && (penMode || (editingId && elements[editingId]?.type === 'path' && !store.isLocked(editingId) && store.isVisible(editingId))) ? <PenOverlay key={`${editingId ?? 'new'}-${penMode}`} store={store} controller={controller} editingId={editingId} penMode={penMode} onFinish={() => { setEditingId(null); onExitPen?.() }} /> : <><SelectionOverlay store={store} controller={controller} panMode={panMode} onEditPath={enterPath} />{!panMode && <MeshCanvasOverlay store={store} controller={controller} />}{!panMode && <GradientCanvasOverlay store={store} controller={controller} />}{!panMode && <MaskCanvasOverlay store={store} controller={controller} />}</>)}</>}>
         <SceneRenderer store={store} interactive={!panMode && !commentMode && !interactiveMode && !physicsMode} />
       </CanvasViewport>
       {interactiveMode && (

@@ -15,7 +15,8 @@ import {
   useMeshActiveGridVertex,
   useMeshPlacementMode,
 } from './meshState'
-import type { MeshAnchor, MeshGridVertex } from './types'
+import type { SceneElement } from '../scene/types'
+import type { MeshAnchor, MeshGridVertex, ShaderPaint } from './types'
 
 function MeshGridCanvasVertex({
   index,
@@ -234,8 +235,23 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
 
   useLayoutEffect(() => controller.subscribe(setViewport), [controller])
   const node = state.selection.length === 1 ? state.elements[state.selection[0]] : undefined
-  const paint = node ? node.style.shader : state.selection.length === 0 ? state.backgroundShader : null
+  const bgMeshIndex = state.selection.length === 0
+    ? (state.backgroundLayers?.findIndex(l => l.kind === 'mesh-gradient' && Boolean(l.mesh)) ?? -1)
+    : -1
+  const bgMeshShader = bgMeshIndex >= 0 ? state.backgroundLayers?.[bgMeshIndex] : state.backgroundShader
+  const paint = node ? node.style.shader : state.selection.length === 0 ? bgMeshShader : null
   const enabled = paint?.kind === 'mesh-gradient' && !!paint.mesh && (!node || (!store.isLocked(node.id) && store.isVisible(node.id)))
+
+  const setMeshShader = (next: ShaderPaint, currentNode?: SceneElement) => {
+    if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
+    else if (bgMeshIndex >= 0) store.updateBackgroundLayer(bgMeshIndex, next)
+    else store.setBackgroundShader(next)
+  }
+
+  const getCurrentMeshPaint = (currentNode?: SceneElement): Extract<ShaderPaint, { kind: 'mesh-gradient' }> | undefined => {
+    const raw = node ? currentNode?.style.shader : (bgMeshIndex >= 0 ? store.getSnapshot().backgroundLayers?.[bgMeshIndex] : store.getSnapshot().backgroundShader)
+    return raw?.kind === 'mesh-gradient' ? raw : undefined
+  }
 
   // The material excludes the rulers; controller.size includes them.
   useLayoutEffect(() => {
@@ -304,7 +320,7 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
 
   const addVertexAtPoint = (clientX: number, clientY: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh || current.mesh.anchors.length >= 10) return
     const meshPoint = screenToMeshCoords(clientX, clientY)
     if (!meshPoint) return
@@ -319,7 +335,7 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       mesh: { ...current.mesh, anchors: nextAnchors },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
     store.endTransaction()
     setMeshActiveAnchor(nextAnchors.length - 1)
     setMeshPlacementMode(false)
@@ -327,7 +343,7 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
 
   const handleColorChange = (index: number, color: string) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh) return
     store.beginTransaction('Change mesh stop color')
     const nextColors = current.params.colors.map((c, i) => i === index ? color : c)
@@ -336,13 +352,13 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       params: { ...current.params, colors: nextColors },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
     store.endTransaction()
   }
 
   const handleGridColorChange = (index: number, color: string) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh?.grid) return
     store.beginTransaction('Change grid vertex color')
     const vertices = current.mesh.grid.vertices.map((v, i) => i === index ? { ...v, color } : v)
@@ -354,13 +370,13 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
     store.endTransaction()
   }
 
   const handleGridTangentChange = (index: number, tx: number, ty: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh?.grid) return
     if (!ownsGesture.current) {
       ownsGesture.current = true
@@ -377,12 +393,12 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
   }
 
   const handleGridSampleField = (index: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh?.grid) return
     const { rows, cols } = current.mesh.grid
     const r = Math.floor(index / cols)
@@ -407,7 +423,7 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
 
   const handleRadiusChange = (index: number, radius: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh) return
     const nextAnchors = current.mesh.anchors.map((a, i) => i === index ? { ...a, radius: Math.max(0.1, Math.min(2.0, radius)) } : a)
     const next = freezeShader({
@@ -415,12 +431,12 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       mesh: { ...current.mesh, anchors: nextAnchors },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
   }
 
   const handleDelete = (index: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh || current.mesh.anchors.length <= 2) return
     store.beginTransaction('Delete mesh stop')
     const nextColors = current.params.colors.filter((_, i) => i !== index)
@@ -431,14 +447,14 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
       mesh: { ...current.mesh, anchors: nextAnchors },
     })
     if (currentNode) store.update(currentNode.id, currentNode.type, { style: { shader: next } })
-    else store.setBackgroundShader(next)
+    else setMeshShader(next, currentNode)
     store.endTransaction()
     setMeshActiveAnchor(Math.max(0, index - 1))
   }
 
   const handleSampleField = (index: number) => {
     const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-    const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+    const current = getCurrentMeshPaint(currentNode)
     if (current?.kind !== 'mesh-gradient' || !current.mesh) return
     const targetAnchor = current.mesh.anchors[index]
     if (!targetAnchor) return
@@ -588,7 +604,7 @@ export function MeshCanvasOverlay({ store, controller }: { store: SceneStore; co
             onEnd={finish}
             onMove={point => {
               const currentNode = node ? store.getSnapshot().elements[node.id] : undefined
-              const current = node ? currentNode?.style.shader : store.getSnapshot().backgroundShader
+              const current = getCurrentMeshPaint(currentNode)
               if (current?.kind !== 'mesh-gradient' || !current.mesh || (node && (!currentNode || store.isLocked(node.id) || !store.isVisible(node.id)))) return
               const next = freezeShader({
                 ...current,

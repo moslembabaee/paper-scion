@@ -11,6 +11,7 @@ import type { ElementPatch, ElementType, SceneElement } from './types'
 import { useScene } from './useScene'
 import { useRangeHistory } from './useRangeHistory'
 import { ShaderInspector } from '../shaders/ShaderInspector'
+import { BackgroundLayersInspector } from '../shaders/BackgroundLayersInspector'
 import { ArrangeBar } from './ArrangeBar'
 import { BooleanBar } from './BooleanBar'
 import { MaskInspector } from './MaskInspector'
@@ -669,34 +670,11 @@ export function ElementInspector({ store, controller, grid, onGridChange, onOpen
       </div>
     </> : <div className="inspector-section"><span className="section-caption">WORKING SPACE</span><h3>{state.selection.length > 1 ? 'Ideas, together.' : 'Beyond the edges.'}</h3><p>{state.selection.length > 1 ? 'Select a single layer to edit its properties.' : <>Select a layer to shape it.<br />Add something. Make it yours.</>}</p></div>}
     {state.selection.length === 0 && (
-      <ShaderInspector
+      <BackgroundLayersInspector
+        store={store}
         onGestureStart={meshGestureStart}
         onGestureEnd={meshGestureEnd}
-        paint={state.backgroundShader ?? null}
-        onChange={paint => store.setBackgroundShader(paint)}
-        target="Canvas background"
         onBrowse={onOpenShaders}
-        onBindTarget={mode => {
-          if (mode === 'selection' && state.selection.length > 0 && state.backgroundShader) {
-            store.beginTransaction('Bind mesh to selection')
-            for (const id of state.selection) {
-              const el = state.elements[id]
-              if (el) store.update(id, el.type, { style: { shader: state.backgroundShader } })
-            }
-            store.endTransaction()
-          } else if (mode === 'new-card' && state.backgroundShader) {
-            const cam = controller.getSnapshot().camera
-            const newNode = store.add('rectangle', {
-              x: -cam.x / cam.zoom + 120,
-              y: -cam.y / cam.zoom + 120,
-              width: 240,
-              height: 240,
-              cornerRadius: 12,
-              style: { fill: null, shader: state.backgroundShader },
-            })
-            store.select([newNode.id])
-          }
-        }}
       />
     )}
     <div className="inspector-section"><span className="section-caption">ENGINEERING GRID</span><div className="setting-row"><span>Show grid</span><button className={`grid-switch ${grid ? 'on' : ''}`} role="switch" aria-checked={grid} aria-label="Show engineering grid" onClick={onGridChange}><span /></button></div><div className="setting-row"><span>Major interval</span><code>120 px</code></div><div className="setting-row"><span>Subdivisions</span><code>24 px</code></div></div>

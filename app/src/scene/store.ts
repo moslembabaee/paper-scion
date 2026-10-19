@@ -3971,8 +3971,60 @@ export class SceneStore {
 
   setBackgroundShader(paint: ShaderPaint | null): void {
     if (paint !== null) validateShader(paint)
-    if (equalValue(this.state.backgroundShader, paint)) return
-    this.publish(Object.freeze({ ...this.state, backgroundShader: paint ? freezeShader(paint) : null }), 'Style canvas background')
+    if (equalValue(this.state.backgroundShader, paint) && (!this.state.backgroundLayers || this.state.backgroundLayers.length <= 1)) return
+    const frozen = paint ? freezeShader(paint) : null
+    this.publish(Object.freeze({
+      ...this.state,
+      backgroundShader: frozen,
+      backgroundLayers: this.state.backgroundLayers ? (frozen ? Object.freeze([frozen, ...this.state.backgroundLayers.slice(1)]) : null) : null,
+    }), 'Style canvas background')
+  }
+
+  setBackgroundLayers(layers: readonly ShaderPaint[] | null): void {
+    if (layers !== null) {
+      if (!Array.isArray(layers)) throw new Error('Invalid background layers')
+      layers.forEach(validateShader)
+    }
+    const frozenLayers = layers && layers.length > 0 ? Object.freeze(layers.map(freezeShader)) : null
+    const primary = frozenLayers && frozenLayers.length > 0 ? frozenLayers[0] : null
+    if (equalValue(this.state.backgroundLayers, frozenLayers) && equalValue(this.state.backgroundShader, primary)) return
+    this.publish(Object.freeze({ ...this.state, backgroundShader: primary, backgroundLayers: frozenLayers }), 'Update canvas background layers')
+  }
+
+  addBackgroundLayer(paint: ShaderPaint): void {
+    validateShader(paint)
+    const current = this.state.backgroundLayers ?? (this.state.backgroundShader ? [this.state.backgroundShader] : [])
+    const frozen = freezeShader(paint)
+    const nextLayers = Object.freeze([...current, frozen])
+    this.publish(Object.freeze({ ...this.state, backgroundShader: nextLayers[0], backgroundLayers: nextLayers }), 'Add canvas background layer')
+  }
+
+  removeBackgroundLayer(index: number): void {
+    const current = this.state.backgroundLayers ?? (this.state.backgroundShader ? [this.state.backgroundShader] : [])
+    if (index < 0 || index >= current.length) return
+    const nextLayers = current.filter((_, i) => i !== index)
+    const frozenLayers = nextLayers.length > 0 ? Object.freeze(nextLayers) : null
+    const primary = frozenLayers && frozenLayers.length > 0 ? frozenLayers[0] : null
+    this.publish(Object.freeze({ ...this.state, backgroundShader: primary, backgroundLayers: frozenLayers }), 'Remove canvas background layer')
+  }
+
+  updateBackgroundLayer(index: number, paint: ShaderPaint): void {
+    validateShader(paint)
+    const current = this.state.backgroundLayers ?? (this.state.backgroundShader ? [this.state.backgroundShader] : [])
+    if (index < 0 || index >= current.length) return
+    const frozen = freezeShader(paint)
+    const nextLayers = Object.freeze(current.map((layer, i) => i === index ? frozen : layer))
+    this.publish(Object.freeze({ ...this.state, backgroundShader: nextLayers[0], backgroundLayers: nextLayers }), 'Update canvas background layer')
+  }
+
+  reorderBackgroundLayer(fromIndex: number, toIndex: number): void {
+    const current = this.state.backgroundLayers ?? (this.state.backgroundShader ? [this.state.backgroundShader] : [])
+    if (fromIndex < 0 || fromIndex >= current.length || toIndex < 0 || toIndex >= current.length || fromIndex === toIndex) return
+    const copy = [...current]
+    const [removed] = copy.splice(fromIndex, 1)
+    copy.splice(toIndex, 0, removed)
+    const nextLayers = Object.freeze(copy)
+    this.publish(Object.freeze({ ...this.state, backgroundShader: nextLayers[0], backgroundLayers: nextLayers }), 'Reorder canvas background layers')
   }
 
   setComments(value: CommentDocument, label = 'Edit comments'): void {
@@ -4026,6 +4078,7 @@ export class SceneStore {
       ...(this.state.prototype ? { prototype: this.state.prototype } : {}),
       ...(this.state.physics ? { physics: this.state.physics } : {}),
       ...(this.state.backgroundShader !== undefined ? { backgroundShader: this.state.backgroundShader } : {}),
+      ...(this.state.backgroundLayers && this.state.backgroundLayers.length > 0 ? { backgroundLayers: this.state.backgroundLayers } : {}),
       ...(Object.keys(registry).length > 0 ? { componentRegistry: registry } : {}),
     }
     return doc
@@ -4070,6 +4123,10 @@ export class SceneStore {
   load(document: SceneDocument): void {
     if (document.version !== 1 || !document.elements || !Array.isArray(document.rootIds)) throw new Error('Unsupported scene document')
     if (document.backgroundShader !== undefined && document.backgroundShader !== null) validateShader(document.backgroundShader)
+    if (document.backgroundLayers !== undefined && document.backgroundLayers !== null) {
+      if (!Array.isArray(document.backgroundLayers)) throw new Error('Invalid background layers')
+      document.backgroundLayers.forEach(validateShader)
+    }
     const tokens = validateTokens(document.tokens ?? [])
     const styleLibrary = validateLibrary(document.styleLibrary, tokens)
     const resolvedTokens = resolveTokens(tokens, styleLibrary.activeThemeId)
@@ -4101,6 +4158,9 @@ export class SceneStore {
     const comments = document.comments === undefined ? undefined : validateComments(document.comments)
     const prototype = document.prototype === undefined ? undefined : validatePrototype(document.prototype, elements)
     const physics = document.physics === undefined ? undefined : validatePhysicsDocument(document.physics)
-    this.publish(Object.freeze({ version: 1, tokens, styleLibrary, ...(motion ? { motion } : {}), ...(comments ? { comments } : {}), ...(prototype ? { prototype } : {}), ...(physics ? { physics } : {}), ...(Object.keys(componentRegistry).length > 0 ? { componentRegistry } : {}), elements: Object.freeze(elements), rootIds: Object.freeze([...document.rootIds]), selection: EMPTY, backgroundShader: document.backgroundShader ? freezeShader(document.backgroundShader) : null }), 'Load artwork')
+    const hasLayers = document.backgroundLayers !== undefined && document.backgroundLayers !== null
+    const backgroundLayers = hasLayers ? Object.freeze(document.backgroundLayers!.map(freezeShader)) : null
+    const backgroundShader = document.backgroundShader ? freezeShader(document.backgroundShader) : (hasLayers && document.backgroundLayers!.length > 0 ? freezeShader(document.backgroundLayers![0]) : null)
+    this.publish(Object.freeze({ version: 1, tokens, styleLibrary, ...(motion ? { motion } : {}), ...(comments ? { comments } : {}), ...(prototype ? { prototype } : {}), ...(physics ? { physics } : {}), ...(Object.keys(componentRegistry).length > 0 ? { componentRegistry } : {}), elements: Object.freeze(elements), rootIds: Object.freeze([...document.rootIds]), selection: EMPTY, backgroundShader, ...(backgroundLayers ? { backgroundLayers } : {}) }), 'Load artwork')
   }
 }
