@@ -96,6 +96,19 @@ const pipelineProperties = {
   passes: list(object(pipelinePassProperties, ['id', 'type', 'name', 'enabled', 'blendMode', 'opacity', 'params'])),
   modulators: list(object(pipelineModulatorProperties, ['id', 'name', 'targetPassId', 'targetParam', 'waveform', 'frequency', 'amplitude', 'offset', 'enabled'])),
 }
+const gradientStop = object({ id: str(), offset: unitInterval, color: str(), opacity: { type: 'number', minimum: 0, maximum: 1 } }, ['id', 'offset', 'color'])
+const gradientProperties = {
+  type: { type: 'string' as const, enum: ['linear', 'radial', 'angular'] } as JsonSchema,
+  stops: list(gradientStop),
+  angle: num,
+  origin: object({ x: num, y: num }, ['x', 'y']),
+  focalLength: num,
+  spread: num,
+  dither: num,
+  smoothness: num,
+  linkToShader: flag,
+  enabled: flag,
+}
 export const shaderSchema: JsonSchema = {
   anyOf: shaderKinds.map(kind => {
     const params = Object.fromEntries(shaderCatalog[kind].controls.map(control => [control.key, controlSchema(control)]))
@@ -116,6 +129,7 @@ export const shaderSchema: JsonSchema = {
       }, ['version', 'enabled', 'preset', 'passes']),
       ...(kind === 'mesh-gradient' ? { mesh: object(meshProperties, ['anchors', 'turbulence', 'frequency', 'chromaticAberration', 'grainBlend']) } : {}),
       ...(kind === 'multi-pass' ? { pipeline: object(pipelineProperties, Object.keys(pipelineProperties)) } : {}),
+      ...(kind === 'multi-stop-gradient' ? { gradient: object(gradientProperties, ['type', 'stops', 'angle', 'origin']) } : {}),
       ...motionProperties,
     }, ['kind', 'params', ...Object.keys(motionProperties)])
   }),
