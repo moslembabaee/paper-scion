@@ -44,3 +44,13 @@ If you discover a non-trivial bug, architectural constraint, or testing nuance, 
   ```bash
   gh pr create --title "feat: <title>" --body "Closes #<number> - <summary>"
   ```
+
+### 5. Developer & Engine Tooling
+- **`codebase-memory-mcp`:** Full knowledge graph indexed for `paper-scion` (6,647 nodes, 33,494 edges). Use `search_code`, `query_graph`, and `get_code_snippet` to inspect modules without full-file read penalties.
+- **`playwright`:** Chromium headless browser installed at `/root/.cache/ms-playwright/`. Run `npx playwright test` inside `app/` to execute real-browser E2E specs.
+- **`glslangValidator`:** Official Khronos GLSL validator available on system PATH (`glslangValidator <shader.frag>`) to syntax-check GLSL 3.00 ES shaders before canvas mounting.
+- **`svgo`:** SVG path optimizer CLI available on system PATH (`svgo <file.svg>`).
+- **`paper-mcp`:** Live Paper canvas inspection & editing bridge available at `/usr/local/bin/paper-mcp`.
+- **`rtk`:** Rust Token Killer v1.0.1 installed at `/usr/bin/rtk` for command output compression and noise reduction.
+- **`context7-mcp`:** Official library API reference CLI at `/usr/local/bin/context7-mcp`.
+- **`multi-stop-gradient` Schema Rule:** `shaderSchema` in `app/src/mcp/schema.ts` includes `gradient` specification. All gradient shaders must conform to `GradientPaint`.
