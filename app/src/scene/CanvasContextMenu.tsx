@@ -70,7 +70,7 @@ interface CanvasContextMenuProps {
   controller: ViewportController
   position: ContextMenuPosition
   onClose: () => void
-  onEditPath?: (id: string) => void
+  onEditPath?: (id: string, operandId?: string) => void
 }
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -442,13 +442,15 @@ export function CanvasContextMenu({ store, controller, position, onClose, onEdit
             label={anyVisible ? 'Hide' : 'Show'}
             onClick={handleToggleVisibility}
           />
-          {isSingle && firstNode?.type === 'path' && !firstNode.boolean && (
+          {isSingle && firstNode?.type === 'path' && (
             <MenuItem
               icon={<PenTool size={14} />}
-              label="Edit Vector Path"
+              label={firstNode.boolean ? 'Edit Sub-Path Anchors' : 'Edit Vector Path'}
               shortcut="Enter"
               onClick={() => {
-                onEditPath?.(firstNode.id)
+                const selectedOp = store.getSelectedCompoundOperand()
+                const opId = selectedOp?.compoundId === firstNode.id ? selectedOp.operandId : firstNode.boolean?.operands[0]?.id
+                onEditPath?.(firstNode.id, opId)
                 onClose()
               }}
             />

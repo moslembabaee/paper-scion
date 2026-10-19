@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { CanvasViewport, unionBounds } from '../canvas'
 import type { ViewportController } from '../canvas'
@@ -17,6 +17,8 @@ import { GradientCanvasOverlay } from '../shaders/GradientCanvasOverlay'
 import { MaskCanvasOverlay } from './MaskCanvasOverlay'
 import { useArrangeShortcuts } from './useArrangeShortcuts'
 import { measurementHit } from './measurementGeometry'
+import { vectorContainsPoint } from './booleanGeometry'
+import { worldToLocal } from './maskGeometry'
 import { CollaborationOverlay } from '../collaboration/CollaborationOverlay'
 import type { CollaborationSession } from '../collaboration/session'
 import { Sparkles } from 'lucide-react'
@@ -28,6 +30,16 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
   const hostRef = useRef<HTMLDivElement>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; worldPos: Point } | null>(null)
+
+  const pathEditingTarget = useSyncExternalStore(
+    store.subscribePathEditingTarget,
+    store.getPathEditingTarget,
+    store.getPathEditingTarget
+  )
+  const effectiveEditingId = pathEditingTarget?.id ?? editingId
+  const effectiveOperandId = pathEditingTarget?.operandId
+  const isEditingPath = Boolean(effectiveEditingId)
+
   useLayoutEffect(() => {
     let active = true
     const refresh = () => { if (active) store.refreshLayout() }
@@ -36,30 +48,75 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
     return () => { active = false; document.fonts.removeEventListener('loadingdone', refresh) }
   }, [store])
   const interactionDisabled = Boolean(prototypeOverlay) || commentMode || interactiveMode || physicsMode
-  if (interactionDisabled && editingId !== null) setEditingId(null)
-  useArrangeShortcuts(store, controller, !interactionDisabled && !penMode && !editingId)
+  if (interactionDisabled) {
+    if (editingId !== null) setEditingId(null)
+    if (pathEditingTarget !== null) store.setPathEditingTarget(null)
+  }
+  useArrangeShortcuts(store, controller, !interactionDisabled && !penMode && !isEditingPath)
 
-  const enterPath = useCallback((id: string | undefined) => {
+  const enterPath = useCallback((id: string | undefined, operandId?: string) => {
     if (store.getHistorySnapshot().active) return
     const node = id ? store.getSnapshot().elements[id] : undefined
     if (node?.type === 'path' && !store.isLocked(node.id) && store.isVisible(node.id)) {
       store.select([node.id])
+      if (operandId && node.boolean) {
+        store.setSelectedCompoundOperand({ compoundId: node.id, operandId })
+      }
+      store.setPathEditingTarget({ id: node.id, operandId })
       setEditingId(node.id)
     }
   }, [store])
+
+  const exitPath = useCallback(() => {
+    setEditingId(null)
+    store.setPathEditingTarget(null)
+    onExitPen?.()
+  }, [store, onExitPen])
 
   useLayoutEffect(() => {
     if (interactionDisabled) return
     const viewport = hostRef.current!.querySelector<HTMLElement>('.canvas-viewport')!
     const doubleClick = (event: MouseEvent) => {
-      if (panMode || penMode || editingId || viewport.dataset.space === 'true' || viewport.dataset.panning === 'true' || (event.target as Element).closest('.viewport-ui')) return
+      if (panMode || penMode || isEditingPath || viewport.dataset.space === 'true' || viewport.dataset.panning === 'true' || (event.target as Element).closest('.viewport-ui')) return
       const rect = viewport.getBoundingClientRect()
-      const hit = measurementHit(store.getSnapshot(), controller.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top }), true)
-      enterPath(hit ?? undefined)
+      const worldPoint = controller.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top })
+      const hit = measurementHit(store.getSnapshot(), worldPoint, true)
+      if (!hit) {
+        enterPath(undefined)
+        return
+      }
+      const hitNode = store.getSnapshot().elements[hit]
+      if (hitNode?.type === 'path' && hitNode.boolean) {
+        const selectedOp = store.getSelectedCompoundOperand()
+        let targetOperandId: string | undefined = selectedOp?.compoundId === hit ? selectedOp.operandId : undefined
+        if (!targetOperandId) {
+          const localPoint = hitNode.parentId === null ? worldPoint : worldToLocal(store.getSnapshot(), hitNode.parentId, worldPoint)
+          for (const op of [...hitNode.boolean.operands].reverse()) {
+            if (vectorContainsPoint(op, localPoint)) {
+              targetOperandId = op.id
+              break
+            }
+          }
+        }
+        enterPath(hit, targetOperandId ?? hitNode.boolean.operands[0]?.id)
+      } else {
+        enterPath(hit)
+      }
     }
     const keydown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || (event.target as Element).closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]')) return
-      if (event.key === 'Enter' && !penMode && !panMode && !editingId) { event.preventDefault(); enterPath(store.getSnapshot().selection[0]) }
+      if (event.key === 'Enter' && !penMode && !panMode && !isEditingPath) {
+        event.preventDefault()
+        const selId = store.getSnapshot().selection[0]
+        const selNode = selId ? store.getSnapshot().elements[selId] : undefined
+        if (selNode?.type === 'path' && selNode.boolean) {
+          const selOp = store.getSelectedCompoundOperand()
+          const opId = selOp?.compoundId === selId ? selOp.operandId : selNode.boolean.operands[0]?.id
+          enterPath(selId, opId)
+        } else {
+          enterPath(selId)
+        }
+      }
     }
     const handleContextMenu = (event: MouseEvent) => {
       if (panMode || penMode || (event.target as Element).closest('.viewport-ui, button, input, textarea, select, [role="dialog"], [role="menu"]')) return
@@ -177,7 +234,7 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
             />
           ))}
         </div>
-      )} overlay={<>{collaboration && <CollaborationOverlay session={collaboration} store={store} controller={controller} />}<AgentOverlay store={store} controller={controller} activity={agentActivity} />{annotationOverlay}{commentMode ? null : prototypeOverlay ?? (physicsMode ? <PhysicsOverlay store={store} controller={controller} onExit={onExitPhysicsMode} /> : interactiveMode ? <InteractiveCanvasOverlay store={store} controller={controller} onExit={onExitInteractiveMode} /> : !panMode && (penMode || (editingId && elements[editingId]?.type === 'path' && !store.isLocked(editingId) && store.isVisible(editingId))) ? <PenOverlay key={`${editingId ?? 'new'}-${penMode}`} store={store} controller={controller} editingId={editingId} penMode={penMode} onFinish={() => { setEditingId(null); onExitPen?.() }} /> : <><SelectionOverlay store={store} controller={controller} panMode={panMode} onEditPath={enterPath} />{!panMode && <MeshCanvasOverlay store={store} controller={controller} />}{!panMode && <GradientCanvasOverlay store={store} controller={controller} />}{!panMode && <MaskCanvasOverlay store={store} controller={controller} />}</>)}</>}>
+      )} overlay={<>{collaboration && <CollaborationOverlay session={collaboration} store={store} controller={controller} />}<AgentOverlay store={store} controller={controller} activity={agentActivity} />{annotationOverlay}{commentMode ? null : prototypeOverlay ?? (physicsMode ? <PhysicsOverlay store={store} controller={controller} onExit={onExitPhysicsMode} /> : interactiveMode ? <InteractiveCanvasOverlay store={store} controller={controller} onExit={onExitInteractiveMode} /> : !panMode && (penMode || (effectiveEditingId && elements[effectiveEditingId]?.type === 'path' && !store.isLocked(effectiveEditingId) && store.isVisible(effectiveEditingId))) ? <PenOverlay key={`${effectiveEditingId ?? 'new'}-${effectiveOperandId ?? 'root'}-${penMode}`} store={store} controller={controller} editingId={effectiveEditingId} operandId={effectiveOperandId} penMode={penMode} onFinish={exitPath} /> : <><SelectionOverlay store={store} controller={controller} panMode={panMode} onEditPath={enterPath} />{!panMode && <MeshCanvasOverlay store={store} controller={controller} />}{!panMode && <GradientCanvasOverlay store={store} controller={controller} />}{!panMode && <MaskCanvasOverlay store={store} controller={controller} />}</>)}</>}>
         <SceneRenderer store={store} interactive={!panMode && !commentMode && !interactiveMode && !physicsMode} />
       </CanvasViewport>
       {interactiveMode && (

@@ -750,11 +750,7 @@ export function PenOverlay({ store, controller, editingId, operandId, penMode, o
       }
       const rect = root.getBoundingClientRect(), state = store.getSnapshot(), s = sessionRef.current, n = s.id ? state.elements[s.id] : undefined
       if (n?.type !== 'path') return
-      const matrix = getWorldMatrix(state, n.id)
-      const map = (p: Point) => {
-        const world = mapPoint(matrix, { x: (p.x - n.viewBox[0]) * n.width / n.viewBox[2], y: (p.y - n.viewBox[1]) * n.height / n.viewBox[3] })
-        return controller.worldToScreen(world)
-      }
+      const map = (p: Point) => controller.worldToScreen(toWorld(p))
       const rendered = roundPathContours(s.contours)
       const hit = nearestPathSegment(rendered, { x: event.clientX - rect.left, y: event.clientY - rect.top }, map)
       if (hit) store.batch(() => {
@@ -794,7 +790,7 @@ export function PenOverlay({ store, controller, editingId, operandId, penMode, o
       root.removeEventListener('dblclick', doubleClick); document.removeEventListener('keydown', keydown, true); window.removeEventListener('blur', blur)
       unsubscribeCamera(); unsubscribeStore(); stopGesture(); commit()
     }
-  }, [store, controller, editingId, penMode])
+  }, [store, controller, editingId, operandId, penMode])
 
   let preview = serializePath(previewContours)
   const lastContour = screenContours.at(-1), last = lastContour?.anchors.at(-1)
