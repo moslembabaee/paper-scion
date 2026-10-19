@@ -163,11 +163,11 @@ Engineering Rules (from AGENTS.md & LESSONS.md):
    gh pr create --title "{title}" --body "Closes #{num} - Implemented and verified by Scion agent."
 """
 
-    # Launch agent with feature-developer template and Antigravity harness
+    # Launch agent with feature-developer template and Claude harness (connected to Nine Router)
     start_cmd = [
         "scion", "start", agent_name, prompt,
         "--type", "feature-developer",
-        "--harness-config", "antigravity"
+        "--harness-config", "claude"
     ]
     code, stdout, stderr = run_cmd(start_cmd)
     if code == 0:
