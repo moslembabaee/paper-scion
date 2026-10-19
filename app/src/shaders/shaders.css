@@ -1264,6 +1264,119 @@
   padding-top: 4px;
 }
 
+/* ==================== CANVAS BACKGROUND LAYERS ==================== */
+.background-layers-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bg-layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bg-layer-card {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--paper-border, #222222);
+  background: var(--paper-surface, #141414);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.bg-layer-card:hover {
+  border-color: var(--paper-border-strong, #3a3a3a);
+}
+
+.bg-layer-card.active {
+  border-color: #81adec;
+  background: rgba(129, 172, 236, 0.05);
+}
+
+.bg-layer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bg-layer-select-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--paper-text, #edebe1);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.bg-layer-title {
+  text-transform: capitalize;
+}
+
+.bg-layer-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bg-layer-compositing-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--paper-border, #1f1f1f);
+}
+
+.bg-layer-blend-select {
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--paper-border, #282828);
+  background: var(--paper-input, #0f0f0f);
+  color: var(--paper-text, #edebe1);
+  min-width: 80px;
+}
+
+.bg-layer-opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.bg-layer-opacity-control input[type='range'] {
+  flex: 1;
+}
+
+.bg-layer-opacity-val {
+  font-size: 9.5px;
+  font-family: var(--font-mono, monospace);
+  color: var(--paper-text-muted, #888888);
+  min-width: 28px;
+  text-align: right;
+}
+
+.bg-layers-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.bg-active-layer-inspector {
+  display: flex;
+  flex-direction: column;
+}
+
+
 
 
 

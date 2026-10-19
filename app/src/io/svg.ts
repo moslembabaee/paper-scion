@@ -201,8 +201,27 @@ export function sceneToSVG(state: SceneSnapshot, options: ExportOptions, assets 
     return output
   }).join('')
   const background = options.background === 'cream' ? `<rect x="${num(bounds.x)}" y="${num(bounds.y)}" width="${num(bounds.width)}" height="${num(bounds.height)}" fill="#edebe1"/>` : ''
-  const shader = options.scope === 'canvas' && state.backgroundShader ? assets.shaders.get('paper:background') : null
-  if (options.scope === 'canvas' && state.backgroundShader && !shader) throw new Error('The canvas shader could not be captured.')
-  const shaderBackground = shader ? `<image x="${num(bounds.x)}" y="${num(bounds.y)}" width="${num(bounds.width)}" height="${num(bounds.height)}" href="${xml(shader)}" preserveAspectRatio="none" opacity="${num(state.backgroundShader?.composite?.opacity ?? 1)}" style="mix-blend-mode:${state.backgroundShader?.composite?.blendMode ?? 'normal'}"/>` : ''
+  const bgLayers = (state.backgroundLayers && state.backgroundLayers.length > 0)
+    ? state.backgroundLayers
+    : (state.backgroundShader ? [state.backgroundShader] : [])
+  let shaderBackground = ''
+  if (options.scope === 'canvas' && bgLayers.length > 0) {
+    const singleShader = assets.shaders.get('paper:background')
+    if (singleShader) {
+      shaderBackground = `<image x="${num(bounds.x)}" y="${num(bounds.y)}" width="${num(bounds.width)}" height="${num(bounds.height)}" href="${xml(singleShader)}" preserveAspectRatio="none" opacity="${num(bgLayers[0]?.composite?.opacity ?? 1)}" style="mix-blend-mode:${bgLayers[0]?.composite?.blendMode ?? 'normal'}"/>`
+    } else {
+      const capturedLayers: string[] = []
+      for (let i = 0; i < bgLayers.length; i++) {
+        const layerShader = assets.shaders.get(`paper:background-${i}`)
+        if (layerShader) {
+          capturedLayers.push(`<image x="${num(bounds.x)}" y="${num(bounds.y)}" width="${num(bounds.width)}" height="${num(bounds.height)}" href="${xml(layerShader)}" preserveAspectRatio="none" opacity="${num(bgLayers[i]?.composite?.opacity ?? 1)}" style="mix-blend-mode:${bgLayers[i]?.composite?.blendMode ?? 'normal'}"/>`)
+        }
+      }
+      if (capturedLayers.length === 0) {
+        throw new Error('The canvas shader could not be captured.')
+      }
+      shaderBackground = capturedLayers.join('')
+    }
+  }
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${num(outputSize?.width ?? bounds.width * options.scale)}" height="${num(outputSize?.height ?? bounds.height * options.scale)}" viewBox="${[bounds.x, bounds.y, bounds.width, bounds.height].map(num).join(' ')}"><defs>${defs.join('')}</defs>${background}${shaderBackground}${content}</svg>`
 }

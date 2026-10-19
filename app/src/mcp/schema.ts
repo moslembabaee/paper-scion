@@ -293,7 +293,7 @@ export const projectSchema = {
     format: { type: 'string', enum: ['paper'] }, version: { type: 'integer', enum: [1] },
     name: { ...str(), maxLength: 200 }, grid: flag,
     viewport: object({ x: num, y: num, zoom: { type: 'number', minimum: .1, maximum: 32 } }, ['x', 'y', 'zoom']),
-    scene: object({ tokens: list(tokenSchema), styleLibrary: styleLibrarySchema, version: { type: 'integer', enum: [1] }, backgroundShader: nullable(shaderSchema), rootIds: list(str()), elements: { type: 'object', additionalProperties: elementSchema }, componentRegistry: componentRegistrySchema }, ['version', 'rootIds', 'elements']),
+    scene: object({ tokens: list(tokenSchema), styleLibrary: styleLibrarySchema, version: { type: 'integer', enum: [1] }, backgroundShader: nullable(shaderSchema), backgroundLayers: nullable(list(shaderSchema)), rootIds: list(str()), elements: { type: 'object', additionalProperties: elementSchema }, componentRegistry: componentRegistrySchema }, ['version', 'rootIds', 'elements']),
   }, ['format', 'version', 'name', 'grid', 'viewport', 'scene']),
 }
 

@@ -45,7 +45,7 @@ export function valueRebaser(before: unknown, after: unknown): (value: unknown) 
 }
 
 function sameDocument(a: SceneSnapshot, b: SceneSnapshot): boolean {
-  return equalValue(a.motion, b.motion) && equalValue(a.comments, b.comments) && equalValue(a.prototype, b.prototype) && equalValue(a.styleLibrary, b.styleLibrary) && equalValue(a.tokens, b.tokens) && equalValue(a.elements, b.elements) && equalValue(a.rootIds, b.rootIds) && equalValue(a.backgroundShader, b.backgroundShader)
+  return equalValue(a.motion, b.motion) && equalValue(a.comments, b.comments) && equalValue(a.prototype, b.prototype) && equalValue(a.styleLibrary, b.styleLibrary) && equalValue(a.tokens, b.tokens) && equalValue(a.elements, b.elements) && equalValue(a.rootIds, b.rootIds) && equalValue(a.backgroundShader, b.backgroundShader) && equalValue(a.backgroundLayers, b.backgroundLayers)
 }
 
 /** Reversible command with shared, frozen scene branches; no serialization per frame. */
