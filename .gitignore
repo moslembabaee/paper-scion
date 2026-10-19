@@ -28,3 +28,6 @@ brag-output/
 .env.*
 !.env.example
 app/server/node_modules/
+.bin/
+.cache/
+app/.playwright-browsers/
