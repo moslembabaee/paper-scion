@@ -11,6 +11,7 @@ import type { GlassmorphismPaint, LiquidChromePaint } from '../../shaders/refrac
 import { multiPassFragmentShader, multiPassUniforms } from '../../shaders/pipeline/multiPassFragment'
 import { displayFragmentShader } from '../../shaders/fluid/fluidShaders'
 import { displayCompositeFragmentShader } from '../../shaders/particle/particleShaders'
+import { generativeFragmentShader, generativeUniforms } from '../../shaders/generative/generativeFragment'
 import type { ExportFileEntry, GeneratedCodeBundle, CodeExportTarget } from './types'
 
 export interface GlslPackageResult {
@@ -172,6 +173,12 @@ export function extractShaderGLSL(paint: ShaderPaint): { glsl: string; uniforms:
       return {
         glsl: multiPassFragmentShader,
         uniforms: multiPassUniforms(paint, 0),
+      }
+
+    case 'generative-material':
+      return {
+        glsl: generativeFragmentShader,
+        uniforms: generativeUniforms(paint as Extract<ShaderPaint, { kind: 'generative-material' }>) as Record<string, unknown>,
       }
 
     default:

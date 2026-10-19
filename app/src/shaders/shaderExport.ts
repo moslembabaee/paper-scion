@@ -10,6 +10,7 @@ import { exportMaterialReact } from './materials/materialExport.ts'
 import { exportGlassmorphismReact, exportLiquidChromeReact } from './refractive/refractiveExport.ts'
 import { exportFluidReact } from './fluid/fluidExport.ts'
 import { exportParticleReact } from './particle/particleExport.ts'
+import { exportGenerativeReact } from './generative/generativeExport.ts'
 import type { GlassmorphismPaint, LiquidChromePaint } from './refractive/types.ts'
 
 export { exportPipelineReact, exportPipelineGLSL, exportPipelineUniforms, exportMeshCSS, exportMeshSVG }
@@ -54,5 +55,6 @@ export function exportShaderSource(paint: ShaderPaint): string {
   if (paint.kind === 'liquid-chrome') return exportLiquidChromeReact(paint as LiquidChromePaint)
   if (paint.kind === 'fluid-simulation') return exportFluidReact(paint)
   if (paint.kind === 'particle-simulation') return exportParticleReact(paint)
+  if (paint.kind === 'generative-material') return exportGenerativeReact(paint)
   return exportCatalogShaderReact(paint)
 }

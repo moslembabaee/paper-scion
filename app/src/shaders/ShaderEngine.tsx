@@ -16,6 +16,7 @@ import { MaterialShaderMount } from './materials/MaterialShaderMount'
 import { FluidShaderMount } from './fluid/FluidShaderMount'
 import { ParticleShaderMount } from './particle/ParticleShaderMount'
 import { ExtrusionShaderMount } from './extrusion/ExtrusionShaderMount'
+import { GenerativeShaderMount } from './generative/GenerativeShaderMount'
 import { audioAnalysis } from './audio/engine'
 import { PostProcessingSurface } from '../canvas/postprocessing/PostProcessingSurface'
 import '../canvas/postprocessing/postprocessing.css'
@@ -153,5 +154,6 @@ function ShaderSource({ paint, paused, onError, captureScale, capturePixelCount 
     case 'fluid-simulation': return <FluidShaderMount paint={paint} common={{ ...common, ...placement }} paused={paused} />
     case 'particle-simulation': return <ParticleShaderMount paint={paint} common={{ ...common, ...placement }} paused={paused} />
     case 'vector-extrusion': return <ExtrusionShaderMount paint={paint} common={{ ...common, ...placement }} paused={paused} />
+    case 'generative-material': return <GenerativeShaderMount paint={paint} common={{ ...common, ...placement }} paused={paused} />
   }
 }
