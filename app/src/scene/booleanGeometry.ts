@@ -359,6 +359,7 @@ export function evaluateVectorElement(node: VectorElement, depth = 0): VectorEle
     : computeBoolean(evaluatedOperands, node.boolean.operation)
   return {
     ...node,
+    ...result.bounds,
     d: result.d,
     viewBox: result.viewBox,
     fillRule: result.fillRule,

@@ -1,5 +1,6 @@
 import { parsePath, type PathAnchor, type PathContour } from '../scene/pathGeometry.ts'
 import { maskFillRule, maskPathData, type MaskElement } from '../scene/maskGeometry.ts'
+import { evaluateVectorElement } from '../scene/booleanGeometry.ts'
 import { exportBounds, exportRoots, type ExportOptions } from './svg.ts'
 import type { PathElement, SceneSnapshot } from '../scene/types.ts'
 
@@ -47,14 +48,16 @@ export function drawSvgPathToCanvas2D(ctx: CanvasRenderingContext2D, d: string):
     for (let i = 0; i < count; i++) {
       const a: PathAnchor = anchors[i]
       const b: PathAnchor = anchors[(i + 1) % anchors.length]
+      const aOut = a.out ?? (a.curveMode === 'quadratic' && a.quadApex ? { x: a.x + (2 / 3) * (a.quadApex.x - a.x), y: a.y + (2 / 3) * (a.quadApex.y - a.y) } : undefined)
+      const bIn = b.in ?? (a.curveMode === 'quadratic' && a.quadApex ? { x: b.x + (2 / 3) * (a.quadApex.x - b.x), y: b.y + (2 / 3) * (a.quadApex.y - b.y) } : undefined)
 
-      if (!a.out && !b.in) {
+      if (!aOut && !bIn) {
         ctx.lineTo(b.x, b.y)
       } else {
-        const cp1x = a.out ? a.out.x : a.x
-        const cp1y = a.out ? a.out.y : a.y
-        const cp2x = b.in ? b.in.x : b.x
-        const cp2y = b.in ? b.in.y : b.y
+        const cp1x = aOut ? aOut.x : a.x
+        const cp1y = aOut ? aOut.y : a.y
+        const cp2x = bIn ? bIn.x : b.x
+        const cp2y = bIn ? bIn.y : b.y
         ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, b.x, b.y)
       }
     }
@@ -76,43 +79,44 @@ export function renderCompoundToCanvas2D(
 ): void {
   ctx.save()
 
-  const opacity = (element.style.opacity ?? 1) * (options.opacity ?? 1)
+  const target = element.boolean ? evaluateVectorElement(element) as PathElement : element
+  const opacity = (target.style.opacity ?? 1) * (options.opacity ?? 1)
   ctx.globalAlpha *= Math.max(0, Math.min(1, opacity))
 
   // Apply element position, size, and rotation
-  ctx.translate(element.x + element.width / 2, element.y + element.height / 2)
-  if (element.rotation) {
-    ctx.rotate((element.rotation * Math.PI) / 180)
+  ctx.translate(target.x + target.width / 2, target.y + target.height / 2)
+  if (target.rotation) {
+    ctx.rotate((target.rotation * Math.PI) / 180)
   }
-  ctx.translate(-element.width / 2, -element.height / 2)
+  ctx.translate(-target.width / 2, -target.height / 2)
 
   // Map from local viewBox coordinates into element pixel dimensions
-  const [vx, vy, vw, vh] = element.viewBox
-  const sx = element.width / Math.max(0.001, vw)
-  const sy = element.height / Math.max(0.001, vh)
+  const [vx, vy, vw, vh] = target.viewBox
+  const sx = target.width / Math.max(0.001, vw)
+  const sy = target.height / Math.max(0.001, vh)
   ctx.scale(sx, sy)
   ctx.translate(-vx, -vy)
 
   // Trace path
-  drawSvgPathToCanvas2D(ctx, element.d)
+  drawSvgPathToCanvas2D(ctx, target.d)
 
   // Fill
-  const fill = options.fill ?? element.style.fill
-  const fillRule: CanvasFillRule = options.fillRule ?? (element.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')
+  const fill = options.fill ?? target.style.fill
+  const fillRule: CanvasFillRule = options.fillRule ?? (target.fillRule === 'evenodd' ? 'evenodd' : 'nonzero')
   if (fill && fill !== 'none') {
     ctx.fillStyle = fill
     ctx.fill(fillRule)
   }
 
   // Stroke
-  const stroke = options.stroke ?? element.style.stroke?.color
-  const strokeWidth = options.strokeWidth ?? element.style.stroke?.width ?? 0
+  const stroke = options.stroke ?? target.style.stroke?.color
+  const strokeWidth = options.strokeWidth ?? target.style.stroke?.width ?? 0
   if (stroke && stroke !== 'none' && strokeWidth > 0) {
     ctx.strokeStyle = stroke
     // Account for inverse viewBox scale so stroke stays uniform
     ctx.lineWidth = strokeWidth / ((sx + sy) / 2)
-    if (element.style.stroke?.dash && element.style.stroke.dash.length > 0) {
-      ctx.setLineDash(element.style.stroke.dash.map(n => n / ((sx + sy) / 2)))
+    if (target.style.stroke?.dash && target.style.stroke.dash.length > 0) {
+      ctx.setLineDash(target.style.stroke.dash.map(n => n / ((sx + sy) / 2)))
     }
     ctx.lineJoin = 'round'
     ctx.stroke()
@@ -137,17 +141,34 @@ export function renderCompoundMaskToCanvas2D(
   const d = maskPathData(mask)
   const rule: CanvasFillRule = maskFillRule(mask) === 'evenodd' ? 'evenodd' : 'nonzero'
   const inverted = Boolean(mask.mask?.inverted)
+  const mode = mask.mask?.mode ?? 'vector'
 
-  if (inverted && frameWidth && frameHeight) {
-    ctx.beginPath()
-    ctx.rect(0, 0, frameWidth, frameHeight)
-    drawSvgPathToCanvas2D(ctx, d)
-    ctx.clip('evenodd')
-    renderChildren()
-  } else {
-    drawSvgPathToCanvas2D(ctx, d)
-    ctx.clip(rule)
-    renderChildren()
+  if (mode === 'vector' || mode === 'luminance') {
+    if (inverted && frameWidth && frameHeight) {
+      ctx.beginPath()
+      ctx.rect(0, 0, frameWidth, frameHeight)
+      drawSvgPathToCanvas2D(ctx, d)
+      ctx.clip('evenodd')
+      renderChildren()
+    } else {
+      drawSvgPathToCanvas2D(ctx, d)
+      ctx.clip(rule)
+      renderChildren()
+    }
+  } else if (mode === 'alpha') {
+    const opacity = Math.max(0, Math.min(1, mask.style.opacity ?? 1))
+    ctx.globalAlpha *= opacity
+    if (inverted && frameWidth && frameHeight) {
+      ctx.beginPath()
+      ctx.rect(0, 0, frameWidth, frameHeight)
+      drawSvgPathToCanvas2D(ctx, d)
+      ctx.clip('evenodd')
+      renderChildren()
+    } else {
+      drawSvgPathToCanvas2D(ctx, d)
+      ctx.clip(rule)
+      renderChildren()
+    }
   }
 
   ctx.restore()

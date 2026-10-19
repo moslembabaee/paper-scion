@@ -505,6 +505,24 @@
   pointer-events: none;
 }
 
+.sel-operand-edit-anchor-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  padding: 1px 3px;
+  background: transparent;
+  border: none;
+  color: var(--paper-accent-text, #81adec);
+  cursor: pointer;
+  pointer-events: auto;
+  border-radius: 2px;
+}
+
+.sel-operand-edit-anchor-btn:hover {
+  background: rgba(129, 173, 236, 0.2);
+}
+
 .sel-badge-stat {
   font: 9px var(--font-mono);
   color: var(--paper-text-muted);

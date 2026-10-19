@@ -50,7 +50,7 @@ type Drag = Gesture & (
   | { type: 'rotate'; box: SelectionBox; startAngle: number }
   | { type: 'spacing'; id: string; layout: AutoLayout; property: SpacingProperty; axis: 'x' | 'y'; sign: number; rotation: number }
 )
-interface Props { store: SceneStore; controller: ViewportController; panMode: boolean; onEditPath?: (id: string) => void }
+interface Props { store: SceneStore; controller: ViewportController; panMode: boolean; onEditPath?: (id: string, operandId?: string) => void }
 
 /** Screen-space affordances; scene hits and viewport navigation remain unobstructed. */
 export const SelectionOverlay = memo(function SelectionOverlay({ store, controller, panMode, onEditPath }: Props) {
@@ -592,6 +592,22 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
             <Layers size={10} />
             <span>Sub-element</span>
           </button>
+          {activeOperand && (
+            <button
+              type="button"
+              className="sel-component-btn"
+              data-testid="sel-edit-anchors-btn"
+              title={`Edit sub-path anchors of ${activeOperand.name}`}
+              onClick={e => {
+                e.stopPropagation()
+                if (onEditPath) onEditPath(selectedNode.id, activeOperand.id)
+                else store.setPathEditingTarget({ id: selectedNode.id, operandId: activeOperand.id })
+              }}
+            >
+              <PenTool size={10} />
+              <span>Edit Anchors</span>
+            </button>
+          )}
           <button
             type="button"
             className="sel-component-btn"
@@ -618,7 +634,13 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
           width: Math.max(12, activeOperandTransform.bounds.width * camera.zoom),
           height: Math.max(12, activeOperandTransform.bounds.height * camera.zoom),
         }}
-        title={`Drag to reposition ${activeOperand.name} (live contour re-baking)`}
+        title={`Drag to reposition ${activeOperand.name} · Double-click to edit anchors`}
+        onDoubleClick={e => {
+          e.stopPropagation()
+          e.preventDefault()
+          if (onEditPath) onEditPath(selectedNode.id, activeOperand.id)
+          else store.setPathEditingTarget({ id: selectedNode.id, operandId: activeOperand.id })
+        }}
         onPointerDown={e => {
           e.stopPropagation()
           e.preventDefault()
@@ -654,6 +676,18 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
         <div className="sel-operand-tag">
           <span>{activeOperand.name}</span>
           <span style={{ opacity: 0.6 }}>({activeOperand.type})</span>
+          <button
+            type="button"
+            className="sel-operand-edit-anchor-btn"
+            title={`Edit sub-path anchors of ${activeOperand.name}`}
+            onClick={e => {
+              e.stopPropagation()
+              if (onEditPath) onEditPath(selectedNode.id, activeOperand.id)
+              else store.setPathEditingTarget({ id: selectedNode.id, operandId: activeOperand.id })
+            }}
+          >
+            <PenTool size={9} />
+          </button>
         </div>
       </div>
     )}

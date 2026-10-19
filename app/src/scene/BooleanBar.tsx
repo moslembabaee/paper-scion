@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   Layers,
+  PenTool,
   Scissors,
   Trash2,
   Unlink,
@@ -320,6 +321,7 @@ function SourceEditor({
   onRemove,
   onUnwrap,
   onChangeNestedOp,
+  onEditAnchors,
 }: {
   source: VectorElement
   index: number
@@ -338,6 +340,7 @@ function SourceEditor({
   onRemove: () => void
   onUnwrap?: () => void
   onChangeNestedOp?: (op: BooleanOperation) => void
+  onEditAnchors?: () => void
 }) {
   const fields = [
     ['x', 'X'],
@@ -397,6 +400,21 @@ function SourceEditor({
           {muted ? <EyeOff size={11} /> : <Eye size={11} />}
           <span>{muted ? 'MUTED' : 'ACTIVE'}</span>
         </button>
+        {onEditAnchors && (
+          <button
+            type="button"
+            className="boolean-source-btn"
+            disabled={disabled}
+            title="Edit sub-path anchors of this operand on canvas"
+            onClick={e => {
+              e.stopPropagation()
+              onEditAnchors()
+            }}
+          >
+            <PenTool size={11} />
+            <span>ANCHORS</span>
+          </button>
+        )}
         <button
           type="button"
           className="boolean-source-btn"
@@ -776,6 +794,10 @@ export function BooleanBar({ store }: { store: SceneStore }) {
                   onDuplicate={() => run(() => store.duplicateBooleanOperand(compound.id, source.id))}
                   onExtract={() => run(() => store.extractBooleanOperand(compound.id, source.id))}
                   onRemove={() => run(() => store.removeBooleanOperand(compound.id, source.id))}
+                  onEditAnchors={() => {
+                    store.setSelectedCompoundOperand({ compoundId: compound.id, operandId: source.id })
+                    store.setPathEditingTarget({ id: compound.id, operandId: source.id })
+                  }}
                   onUnwrap={
                     source.type === 'path' && source.boolean
                       ? () => run(() => store.unwrapNestedBoolean(compound.id, source.id))
