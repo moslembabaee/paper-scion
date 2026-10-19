@@ -10,7 +10,7 @@ import type { ShaderKind, ShaderPaint } from './types'
 import './shaders.css'
 
 const thumbnails = Object.fromEntries(shaderKinds.map(kind => [kind, { ...createShader(kind), animated: false }])) as Record<ShaderKind, ShaderPaint>
-const categories: Record<ShaderKind, 'Color' | 'Texture' | 'Organic' | 'Glass'> = { 'mesh-gradient': 'Color', 'multi-stop-gradient': 'Color', 'grain-gradient': 'Texture', 'halftone-cmyk': 'Texture', dithering: 'Texture', 'dot-orbit': 'Organic', 'neuro-noise': 'Organic', gooey: 'Organic', 'perlin-noise': 'Texture', 'liquid-distortion': 'Organic', 'glass-refraction': 'Glass', 'multi-pass': 'Organic', 'procedural-noise': 'Texture', glassmorphism: 'Glass', 'liquid-chrome': 'Glass', 'shader-material': 'Glass', 'fluid-simulation': 'Organic', 'particle-simulation': 'Organic', 'vector-extrusion': 'Texture' }
+const categories: Record<ShaderKind, 'Color' | 'Texture' | 'Organic' | 'Glass'> = { 'mesh-gradient': 'Color', 'multi-stop-gradient': 'Color', 'grain-gradient': 'Texture', 'halftone-cmyk': 'Texture', dithering: 'Texture', 'dot-orbit': 'Organic', 'neuro-noise': 'Organic', gooey: 'Organic', 'perlin-noise': 'Texture', 'liquid-distortion': 'Organic', 'glass-refraction': 'Glass', 'multi-pass': 'Organic', 'procedural-noise': 'Texture', glassmorphism: 'Glass', 'liquid-chrome': 'Glass', 'shader-material': 'Glass', 'fluid-simulation': 'Organic', 'particle-simulation': 'Organic', 'vector-extrusion': 'Texture', 'generative-material': 'Organic' }
 const filters = ['All', 'Color', 'Texture', 'Organic', 'Glass'] as const
 
 export function ShaderBrowser({ store, onClose }: { store: SceneStore; onClose: () => void }) {

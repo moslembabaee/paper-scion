@@ -12,6 +12,7 @@ import { createDefaultFluidParams } from './fluid/presets.ts'
 import { createDefaultParticleParams } from './particle/presets.ts'
 import { createDefaultExtrusionParams } from './extrusion/presets.ts'
 import { extrusionBevelProfiles, extrusionViewModes } from './extrusion/types.ts'
+import { createDefaultGenerativeParams, getGenerativePreset, generativePresetKeys } from './generative/presets.ts'
 
 const number = (key: string, label: string, min = 0, max = 1, step = .01, integer = false): Extract<ShaderControl, { type: 'number' }> => ({ key, label, type: 'number', min, max, step, integer })
 const color = (key: string, label: string): ShaderControl => ({ key, label, type: 'color' })
@@ -313,6 +314,22 @@ export const shaderCatalog = {
       select('viewMode', 'View mode', extrusionViewModes),
     ],
   },
+  'generative-material': {
+    label: 'Generative Material',
+    description: 'Interactive procedural shader materials with grain intensity, fluid distortion, chromatic aberration, turbulence speed, and color stops.',
+    defaults: createDefaultGenerativeParams('aurora-borealis'),
+    controls: [
+      select('preset', 'Preset', generativePresetKeys),
+      palette(8, 'colorStops'),
+      number('grainIntensity', 'Grain intensity'),
+      number('fluidDistortion', 'Fluid distortion'),
+      number('chromaticAberration', 'Chromatic aberration'),
+      number('turbulenceSpeed', 'Turbulence speed', 0, 3, 0.05),
+      number('frequency', 'Frequency', 0.1, 10, 0.1),
+      number('contrast', 'Contrast', 0.1, 2.5, 0.05),
+      number('octaves', 'Octaves', 1, 6, 1, true),
+    ],
+  },
 } satisfies { [K in ShaderKind]: ShaderDefinition<K> }
 
 export const shaderKinds = Object.keys(shaderCatalog) as ShaderKind[]
@@ -328,7 +345,9 @@ export function createShader(kind: ShaderKind, image?: string): ShaderPaint {
         ? { ...paint, gradient: createDefaultGradient() }
         : kind === 'multi-pass'
           ? { ...paint, pipeline: createDefaultPipeline('prismatic-glass') }
-          : (kind === 'halftone-cmyk' || kind === 'glass-refraction') && image
+          : kind === 'generative-material'
+            ? ({ ...paint, params: { ...params, colorStops: [...(params as unknown as { colorStops: readonly string[] }).colorStops] } } as ShaderPaint)
+            : (kind === 'halftone-cmyk' || kind === 'glass-refraction') && image
             ? ({ ...paint, params: { ...params, image } } as ShaderPaint)
             : paint
   )
@@ -396,6 +415,14 @@ export function freezeShader(paint: ShaderPaint): ShaderPaint {
 }
 
 export function updateShaderParameter(paint: ShaderPaint, key: string, value: ShaderValue): ShaderPaint {
+  if (paint.kind === 'generative-material' && key === 'preset' && typeof value === 'string') {
+    const preset = getGenerativePreset(value)
+    if (preset) {
+      const next = { ...paint, params: { ...preset.params, colorStops: [...preset.params.colorStops] } } as ShaderPaint
+      validateShader(next)
+      return freezeShader(next)
+    }
+  }
   if (paint.kind === 'shader-material' && key === 'presetId' && typeof value === 'string') {
     const preset = getMaterialPreset(value)
     if (preset) {

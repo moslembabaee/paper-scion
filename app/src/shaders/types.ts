@@ -7,6 +7,7 @@ import type { MaterialPresetParams } from './materials/types.ts'
 import type { FluidSimulationParams } from './fluid/types.ts'
 import type { ParticleSimulationParams } from './particle/types.ts'
 import type { VectorExtrusionParams } from './extrusion/types.ts'
+import type { GenerativeMaterialParams } from './generative/types.ts'
 
 export type { MultiPassParams, ShaderPipeline } from './pipeline/types.ts'
 export type { PipelinePass, PipelinePassType, UniformModulator } from './pipeline/types.ts'
@@ -47,6 +48,12 @@ export type {
   ExtrusionViewMode,
   ExtrusionPreset,
 } from './extrusion/types.ts'
+export type {
+  GenerativeMaterialParams,
+  GenerativePresetId,
+  GenerativePresetDefinition,
+  GenerativeUniforms,
+} from './generative/types.ts'
 
 export interface MultiStopGradientParams {
   readonly gradientType: 'linear' | 'radial' | 'angular'
@@ -83,6 +90,7 @@ export interface ShaderParams {
   'fluid-simulation': FluidSimulationParams
   'particle-simulation': ParticleSimulationParams
   'vector-extrusion': VectorExtrusionParams
+  'generative-material': GenerativeMaterialParams
 }
 export type ShaderKind = keyof ShaderParams
 export interface ShaderMotion {

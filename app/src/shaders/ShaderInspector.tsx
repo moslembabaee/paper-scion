@@ -15,6 +15,7 @@ import type { RefractivePaint } from './refractive/types'
 import { MaterialPresetInspector } from './materials/MaterialPresetInspector'
 import { FluidInspector } from './fluid/FluidInspector'
 import { ParticleInspector } from './particle/ParticleInspector'
+import { GenerativeMaterialInspector } from './generative/GenerativeMaterialInspector'
 
 function Slider({ control, value, onChange }: { control: Extract<ShaderControl, { type: 'number' }>; value: number; onChange: (value: number) => void }) {
   const inputId = useId()
@@ -91,6 +92,14 @@ export function ShaderInspector({ paint, onChange, target, image, showPicker = t
           onBindTarget={onBindTarget}
         />
       )}
+      {paint.kind === 'generative-material' && (
+        <GenerativeMaterialInspector
+          paint={paint as Extract<ShaderPaint, { kind: 'generative-material' }>}
+          onChange={onChange}
+          target={target}
+          onBindTarget={onBindTarget}
+        />
+      )}
       {definition.controls.map(control => {
         if (paint.kind === 'multi-pass') return null
         if (paint.kind === 'procedural-noise') return null
@@ -99,6 +108,7 @@ export function ShaderInspector({ paint, onChange, target, image, showPicker = t
         if (paint.kind === 'shader-material') return null
         if (paint.kind === 'fluid-simulation') return null
         if (paint.kind === 'particle-simulation') return null
+        if (paint.kind === 'generative-material') return null
         if (paint.kind === 'mesh-gradient' && paint.mesh && control.type === 'palette') return null
         if (paint.kind === 'mesh-gradient' && paint.mesh && (control.key === 'grainMixer' || control.key === 'grainOverlay')) return null
         const value = params[control.key]
