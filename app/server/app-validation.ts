@@ -45,13 +45,27 @@ export async function runAppValidation(
   signal.addEventListener('abort', cancel, { once: true })
   try {
     if (signal.aborted) cancel()
-    const result = await Promise.race([
-      stopped,
-      Promise.resolve().then(() => {
-        controller.signal.throwIfAborted()
-        return validator(assets, controller.signal)
-      }),
-    ])
+    const validatorPromise = Promise.resolve().then(() => {
+      controller.signal.throwIfAborted()
+      return validator(assets, controller.signal)
+    })
+    validatorPromise.catch(() => {})
+    let result: BrowserValidation
+    try {
+      result = await Promise.race([
+        stopped,
+        validatorPromise,
+      ])
+    } catch {
+      try {
+        const graceMs = Math.min(50, options.timeoutMs ?? 50)
+        await Promise.race([
+          validatorPromise,
+          new Promise(resolve => setTimeout(resolve, graceMs)),
+        ])
+      } catch {}
+      return blocked(expired ? 'Browser validation exceeded its fixed time limit.' : signal.aborted ? 'Browser validation cancelled.' : 'Browser validation could not complete.')
+    }
     controller.signal.throwIfAborted()
     if (result.status === 'blocked') return blocked('Browser validation could not complete. The previous revision is unchanged.')
     if (!['passed', 'failed'].includes(result.status) ||
@@ -112,7 +126,7 @@ export const validateAppInBrowser: AppBrowserValidator = async (assets, signal) 
   let browser: Browser | undefined
   let server: BrowserServer | undefined
   let expired = false
-  const stop = () => { expired = true; server?.process().kill('SIGKILL') }
+  const stop = () => { expired = true; try { server?.process().kill('SIGKILL') } catch {} }
   const timer = setTimeout(stop, VALIDATION_LIMITS.timeoutMs)
   signal.addEventListener('abort', stop, { once: true })
   try {
@@ -120,81 +134,104 @@ export const validateAppInBrowser: AppBrowserValidator = async (assets, signal) 
     server = await chromium.launchServer({ headless: true, timeout: 5000, args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'], ...(process.env.PAPER_VALIDATION_CHROMIUM ? { executablePath: process.env.PAPER_VALIDATION_CHROMIUM } : {}) })
     browser = await chromium.connect(server.wsEndpoint(), { timeout: 3000 })
     if (expired || signal.aborted) { stop(); throw new Error('Stopped') }
-    for (const viewport of ['desktop', 'mobile'] as const) {
+
+    const runViewport = async (viewport: 'desktop' | 'mobile') => {
       const size = PREVIEW_VIEWPORTS[viewport]
       const width = Number(size.width), height = Number(size.height)
-      const context = await browser.newContext({ viewport: { width, height }, serviceWorkers: 'block', acceptDownloads: false, permissions: [] })
+      const context = await browser!.newContext({ viewport: { width, height }, serviceWorkers: 'block', acceptDownloads: false, permissions: [] })
       await context.route('**/*', route => route.abort())
       const page = await context.newPage()
-      page.setDefaultTimeout(3000)
-      page.on('pageerror', error => issue('RUNTIME_ERROR', `${viewport}: ${error.message}`))
-      page.on('console', message => {
-        if (message.type() === 'error') {
-          const text = message.text()
-          if (text.includes('Unrecognized Content-Security-Policy directive')) return
-          issue('RUNTIME_ERROR', `${viewport}: ${text}`)
-        }
-      })
-      await page.exposeFunction('__paperValidationError', (raw: unknown) => {
-        const parsed = parsePreviewMessage(raw, 'paper-preview')
-        if (parsed.valid && parsed.message.type === 'preview:error') issue('RUNTIME_ERROR', `${viewport}: ${(parsed.message.payload as { message: string }).message}`)
-      })
-      await page.setContent('<html><body style="margin:0;background:#080808"><iframe style="border:0;width:100vw;height:100vh;display:block"></iframe></body></html>')
-      await page.evaluate(({ html, sandbox, allow }) => {
-        const frame = document.querySelector('iframe')!
-        frame.setAttribute('sandbox', sandbox)
-        frame.setAttribute('allow', allow)
-        frame.setAttribute('referrerpolicy', 'no-referrer')
-        let windowStart = Date.now(), count = 0
-        window.addEventListener('message', event => {
-          const now = Date.now()
-          if (now - windowStart >= 1000) { windowStart = now; count = 0 }
-          if (++count > 120) return
-          if (event.source === frame.contentWindow && event.origin === 'null') {
-            void (window as unknown as { __paperValidationError: (raw: unknown) => Promise<void> }).__paperValidationError(event.data)
+        page.setDefaultTimeout(3000)
+        page.on('pageerror', error => issue('RUNTIME_ERROR', `${viewport}: ${error.message}`))
+        page.on('console', message => {
+          if (message.type() === 'error') {
+            const text = message.text()
+            if (text.includes('Unrecognized Content-Security-Policy directive')) return
+            issue('RUNTIME_ERROR', `${viewport}: ${text}`)
           }
         })
-        frame.srcdoc = html
-      }, { html: assets.html, sandbox: PREVIEW_SANDBOX_POLICY, allow: PREVIEW_PERMISSIONS_POLICY })
-      const frame = page.frameLocator('iframe')
-      // The compiler's ready message precedes React's commit. Require a real,
-      // visible render and observe delayed errors before deciding success.
-      try { await frame.locator('#root').locator(':scope > *').first().waitFor({ state: 'visible', timeout: 2500 }) }
-      catch { issue('RUNTIME_ERROR', `${viewport}: App did not render visible content within 2.5 seconds.`) }
-      await page.waitForTimeout(350)
-      const overflow = await frame.locator('html').evaluate(node => {
-        const w = window.innerWidth
-        if (node.scrollWidth > w + 1) return true
-        if (document.body && document.body.scrollWidth > w + 1) return true
-        const root = document.getElementById('root')
-        if (root && root.scrollWidth > w + 1) return true
-        for (const el of document.querySelectorAll('#root *')) {
-          const rect = el.getBoundingClientRect()
-          if (rect.right > w + 1) return true
+        await page.exposeFunction('__paperValidationError', (raw: unknown) => {
+          const parsed = parsePreviewMessage(raw, 'paper-preview')
+          if (parsed.valid && parsed.message.type === 'preview:error') issue('RUNTIME_ERROR', `${viewport}: ${(parsed.message.payload as { message: string }).message}`)
+        })
+        await page.setContent('<html><body style="margin:0;background:#080808"><iframe style="border:0;width:100vw;height:100vh;display:block"></iframe></body></html>')
+        await page.evaluate(({ html, sandbox, allow }) => {
+          const frame = document.querySelector('iframe')!
+          frame.setAttribute('sandbox', sandbox)
+          frame.setAttribute('allow', allow)
+          frame.setAttribute('referrerpolicy', 'no-referrer')
+          let windowStart = Date.now(), count = 0
+          window.addEventListener('message', event => {
+            const now = Date.now()
+            if (now - windowStart >= 1000) { windowStart = now; count = 0 }
+            if (++count > 120) return
+            if (event.source === frame.contentWindow && event.origin === 'null') {
+              void (window as unknown as { __paperValidationError: (raw: unknown) => Promise<void> }).__paperValidationError(event.data)
+            }
+          })
+          frame.srcdoc = html
+        }, { html: assets.html, sandbox: PREVIEW_SANDBOX_POLICY, allow: PREVIEW_PERMISSIONS_POLICY })
+        const frame = page.frameLocator('iframe')
+        // The compiler's ready message precedes React's commit. Require a real,
+        // visible render and observe delayed errors before deciding success.
+        let visibleTimer: ReturnType<typeof setTimeout> | undefined
+        try {
+          await Promise.race([
+            frame.locator('#root').locator(':scope > *').first().waitFor({ state: 'visible', timeout: 2500 }),
+            new Promise<void>(resolve => {
+              const check = () => {
+                if (diagnostics.some(d => d.severity === 'error')) resolve()
+                else visibleTimer = setTimeout(check, 50)
+              }
+              visibleTimer = setTimeout(check, 50)
+            }),
+          ])
+        } catch {
+          issue('RUNTIME_ERROR', `${viewport}: App did not render visible content within 2.5 seconds.`)
+        } finally {
+          clearTimeout(visibleTimer)
         }
-        return false
-      }, undefined, { timeout: 1000 }).catch(() => false)
-      if (overflow) issue('VISUAL_ERROR', `${viewport}: Content overflows the viewport horizontally.`)
-      const capture = await page.screenshot({ type: 'jpeg', quality: 35, timeout: 2000 })
-      // Resize only on the trusted, empty parent. Never expose image bytes to
-      // the generated frame, and never take a screenshot of the Paper host.
-      const dataUrl = await page.evaluate(async ({ encoded, limit }) => {
-        const image = new Image()
-        image.src = 'data:image/jpeg;base64,' + encoded
-        await image.decode()
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.round(image.width / 2); canvas.height = Math.round(image.height / 2)
-        canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
-        for (const quality of [0.5, 0.25, 0.1]) {
-          const data = canvas.toDataURL('image/jpeg', quality)
-          if (data.length <= Math.floor(limit * 4 / 3) + 23) return data
+        await page.waitForTimeout(350)
+        const overflow = await frame.locator('html').evaluate(node => {
+          const w = window.innerWidth
+          if (node.scrollWidth > w + 1) return true
+          if (document.body && document.body.scrollWidth > w + 1) return true
+          const root = document.getElementById('root')
+          if (root && root.scrollWidth > w + 1) return true
+          for (const el of document.querySelectorAll('#root *')) {
+            const rect = el.getBoundingClientRect()
+            if (rect.right > w + 1) return true
+          }
+          return false
+        }, undefined, { timeout: 1000 }).catch(() => false)
+        if (overflow) issue('VISUAL_ERROR', `${viewport}: Content overflows the viewport horizontally.`)
+        const capture = await page.screenshot({ type: 'jpeg', quality: 35, timeout: 2000 })
+        // Resize only on the trusted, empty parent. Never expose image bytes to
+        // the generated frame, and never take a screenshot of the Paper host.
+        const dataUrl = await page.evaluate(async ({ encoded, limit }) => {
+          const image = new Image()
+          image.src = 'data:image/jpeg;base64,' + encoded
+          await image.decode()
+          const canvas = document.createElement('canvas')
+          canvas.width = Math.round(image.width / 2); canvas.height = Math.round(image.height / 2)
+          canvas.getContext('2d')!.drawImage(image, 0, 0, canvas.width, canvas.height)
+          for (const quality of [0.5, 0.25, 0.1]) {
+            const data = canvas.toDataURL('image/jpeg', quality)
+            if (data.length <= Math.floor(limit * 4 / 3) + 23) return data
+          }
+          return ''
+        }, { encoded: capture.toString('base64'), limit: VALIDATION_LIMITS.maxScreenshotBytes })
+        if (!dataUrl) throw new Error('Screenshot budget exceeded')
+        return {
+          screenshot: { viewport, dataUrl },
+          viewport: { viewport, width, height, screenshotBytes: Buffer.from(dataUrl.split(',')[1], 'base64').byteLength },
         }
-        return ''
-      }, { encoded: capture.toString('base64'), limit: VALIDATION_LIMITS.maxScreenshotBytes })
-      if (!dataUrl) throw new Error('Screenshot budget exceeded')
-      screenshots.push({ viewport, dataUrl })
-      viewports.push({ viewport, width, height, screenshotBytes: Buffer.from(dataUrl.split(',')[1], 'base64').byteLength })
-      await context.close()
+    }
+
+    const results = await Promise.all([runViewport('desktop'), runViewport('mobile')])
+    for (const item of results) {
+      screenshots.push(item.screenshot)
+      viewports.push(item.viewport)
     }
     return { status: diagnostics.length ? 'failed' : 'passed', diagnostics, screenshots, viewports }
   } catch {
@@ -203,6 +240,9 @@ export const validateAppInBrowser: AppBrowserValidator = async (assets, signal) 
   } finally {
     clearTimeout(timer)
     signal.removeEventListener('abort', stop)
+    if (expired || signal.aborted) {
+      try { server?.process().kill('SIGKILL') } catch {}
+    }
     await browser?.close().catch(() => {})
     await server?.close().catch(() => {})
     activeBrowsers--

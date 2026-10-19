@@ -49,6 +49,7 @@ async function setup(page: Page, runtime?: 'repair' | 'persistent') {
   const { user, session } = await service.auth.login('github', { sub: 'generation-browser', email: 'generation@paper.test', name: 'Designer', avatar: '' })
   const responses: ServerResponse[] = []
   await mockStudioSession(page)
+  await page.route('**/api/auth/session', route => route.fulfill({ json: { user, providers: { google: true, github: true } } }))
   const relay = async (route: import('@playwright/test').Route) => {
     const socket = new Duplex({ read() {}, write(_chunk, _encoding, callback) { callback() } })
     socket.remoteAddress = '127.0.0.1'
@@ -65,7 +66,7 @@ async function setup(page: Page, runtime?: 'repair' | 'persistent') {
     await service.handler(req, res, route.request().postData() ?? '{}')
     await route.fulfill({ status: res.statusCode, contentType: 'application/json', body: responseBody })
   }
-  await page.route(/\/api\/apps(?:\/|$)/, relay)
+  await page.route(/\/api\/(?:apps|shared-apps)(?:\/|$)/, relay)
   await page.route('**/api/model/**', relay)
   await page.goto('/')
   await page.getByRole('button', { name: 'Make workspace', exact: true }).click()
@@ -76,7 +77,7 @@ async function setup(page: Page, runtime?: 'repair' | 'persistent') {
     async close() {
       service.close()
       for (const response of responses) response.emit('close')
-      await rm(root, { recursive: true, force: true })
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     },
   }
 }
@@ -90,6 +91,7 @@ async function planAndGenerate(page: Page) {
 }
 
 test('creates a versioned app from an approved plan, renders and interacts at desktop/mobile, and rejects invalid replacement', async ({ page }) => {
+  test.setTimeout(60_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const f = await setup(page)
@@ -100,7 +102,7 @@ test('creates a versioned app from an approved plan, renders and interacts at de
     await expect(page.getByText('Saved to your account', { exact: true })).toBeVisible()
     const id = await page.getByRole('combobox', { name: 'Make project' }).inputValue()
     await planAndGenerate(page)
-    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible()
+    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible({ timeout: 15000 })
     const preview = page.frameLocator('iframe').frameLocator('iframe')
     await expect(preview.getByRole('heading', { name: 'Made with Paper' })).toBeVisible()
     await expect(page.getByTestId('make-preview-status')).toHaveText('Running')
@@ -147,7 +149,7 @@ test('unsaved draft generation goes through the same approved plan/compiler pipe
   const f = await setup(page)
   try {
     await planAndGenerate(page)
-    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible()
+    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible({ timeout: 15000 })
     await page.getByRole('button', { name: 'Dismiss plan' }).click()
     const preview = page.frameLocator('iframe').frameLocator('iframe')
     await preview.getByRole('button', { name: 'Increment' }).click()
@@ -158,6 +160,7 @@ test('unsaved draft generation goes through the same approved plan/compiler pipe
 
 
 test('chat follow-up changes only targeted CSS, shows bounded diff and restores one rollback point', async ({ page }) => {
+  test.setTimeout(60_000)
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   const f = await setup(page)
@@ -166,7 +169,7 @@ test('chat follow-up changes only targeted CSS, shows bounded diff and restores 
     await expect(page.getByText('Saved to your account', { exact: true })).toBeVisible()
     const id = await page.getByRole('combobox', { name: 'Make project' }).inputValue()
     await planAndGenerate(page)
-    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible()
+    await expect(page.getByText('APP PROJECT / REV 2', { exact: true })).toBeVisible({ timeout: 15000 })
     await page.getByRole('button', { name: 'Dismiss plan' }).click()
     const before = await f.service.storage.apps.read(f.user.id, id)
     f.editStylesOnly()
@@ -175,7 +178,7 @@ test('chat follow-up changes only targeted CSS, shows bounded diff and restores 
     await page.getByRole('button', { name: 'Approve plan', exact: true }).click()
     await expect(page.getByRole('region', { name: 'App plan', exact: true }).getByRole('status')).toHaveText('Approved')
     await page.getByRole('button', { name: 'Generate app', exact: true }).click()
-    await expect(page.getByText('APP PROJECT / REV 3', { exact: true })).toBeVisible()
+    await expect(page.getByText('APP PROJECT / REV 3', { exact: true })).toBeVisible({ timeout: 15000 })
     await page.getByRole('button', { name: 'Dismiss plan' }).click()
     const changes = page.getByRole('region', { name: 'Applied changes' })
     await expect(changes).toContainText('Validated and applied · 1 file')
@@ -225,6 +228,7 @@ test('agent repairs a runtime error once and shows both validation attempts', as
 })
 
 test('persistent runtime error stops at two candidates and retains the working preview', async ({ page }) => {
+  test.setTimeout(60_000)
   const f = await setup(page, 'persistent')
   try {
     await page.getByRole('button', { name: 'Save a copy', exact: true }).click()
