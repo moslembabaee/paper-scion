@@ -250,7 +250,7 @@ export function sampleMultiOctaveNoise(options: MultiOctaveNoiseOptions): number
     // Turbulence folding: interpolates between smooth fBm and rectified absolute ridges
     if (turbulence > 0) {
       const turbulent = (Math.abs(raw) * 2.0 - 1.0)
-      raw = raw * (1.0 - turbulence) + turbulent * turbulence
+      raw = lerp(raw, turbulent, turbulence)
     }
 
     total += raw * amp

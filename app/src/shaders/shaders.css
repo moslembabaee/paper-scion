@@ -79,6 +79,7 @@
 .mesh-preset-chips { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-top:6px; }
 .mesh-preset-chip { display:flex; align-items:center; gap:6px; padding:5px 7px; border:1px solid var(--paper-border); border-radius:4px; background:var(--paper-input); color:var(--paper-text); font-size:10px; cursor:pointer; text-align:left; transition:all .15s; }
 .mesh-preset-chip:hover { border-color:#81adec; background:var(--paper-surface); }
+.mesh-preset-chip.preset-active { border-color:#81adec; background:rgba(129,172,236,0.12); color:#81adec; font-weight:500; }
 .mesh-preset-dots { display:flex; gap:2px; align-items:center; flex-shrink:0; }
 .mesh-preset-dots i { width:6px; height:6px; border-radius:50%; display:block; }
 .mesh-stops-header { display:flex; align-items:center; justify-content:space-between; margin:14px 0 6px; }

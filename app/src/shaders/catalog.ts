@@ -104,7 +104,7 @@ export const shaderCatalog = {
   },
   'procedural-noise': {
     label: 'Procedural Noise',
-    description: 'Multi-octave Simplex, Perlin, and Worley noise with normal-map displacement.',
+    description: 'Multi-octave Simplex, Perlin, and Worley noise with grain displacement and normal-map surface perturbation.',
     defaults: {
       noiseType: 'simplex',
       frequency: 3.5,
