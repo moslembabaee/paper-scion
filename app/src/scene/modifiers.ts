@@ -13,6 +13,7 @@ import {
   computePathCSG,
   type CSGOperation,
 } from './csgEngine.ts'
+import { vectorPathData } from './booleanGeometry.ts'
 import { optimizeSvgBezierData } from './bezierOptimization.ts'
 
 export type VectorModifierType =
@@ -566,8 +567,8 @@ export function evaluateModifierStack(
   modifiers: readonly VectorModifier[],
   context: ModifierEvaluationContext
 ): ModifierEvaluationResult {
-  const baseD = baseElement.type === 'path' ? (baseElement.baseD ?? baseElement.d) : ''
-  let currentD = baseD || (baseElement.type === 'path' ? baseElement.d : '')
+  const baseD = baseElement.type === 'path' ? (baseElement.baseD ?? baseElement.d) : vectorPathData(baseElement)
+  let currentD = baseD || (baseElement.type === 'path' ? baseElement.d : vectorPathData(baseElement))
   let currentViewBox: readonly [number, number, number, number] =
     baseElement.type === 'path' ? baseElement.viewBox : [0, 0, baseElement.width, baseElement.height]
 
@@ -599,7 +600,7 @@ export function evaluateModifierStack(
           const target = context.elements[mod.targetLayerId]
           if (target && ['rectangle', 'ellipse', 'path'].includes(target.type)) {
             const targetVec = target as VectorElement
-            const targetParsedD = targetVec.type === 'path' ? targetVec.d : ''
+            const targetParsedD = targetVec.type === 'path' ? targetVec.d : vectorPathData(targetVec)
             operandD = targetParsedD || operandD
           }
         }
