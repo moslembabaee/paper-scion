@@ -196,12 +196,21 @@ test('variable font dynamics modulation across glyph cascade (weight, slant, sca
   assert.ok(Math.abs((offsetInv.slantDelta ?? 0) - 10) < 1e-3)
   assert.ok(Math.abs((offsetInv.scale ?? 1) - 1.25) < 1e-3)
 
-  // Vector outlines reflect scale modulation
+  // Vector outlines reflect scale and slant modulation
   const node = text({ text: 'O', textOnPath: { enabled: true, align: 'center' } })
   const glyphs = geometry(node)
-  const dNormal = glyphOutlines(glyphs, { ...DEFAULT_KINETIC, phase: 0.75, scaleModulation: 0 })
+  const dNormal = glyphOutlines(glyphs, { ...DEFAULT_KINETIC, phase: 0.75, scaleModulation: 0, slantModulation: 0 })
   const dScaled = glyphOutlines(glyphs, { ...DEFAULT_KINETIC, phase: 0.75, scaleModulation: 0.5 })
+  const dSlanted = glyphOutlines(glyphs, { ...DEFAULT_KINETIC, phase: 0.75, slantModulation: 15 })
   assert.notEqual(dNormal, dScaled, 'Scale modulation affects baked glyph outline geometry')
+  assert.notEqual(dNormal, dSlanted, 'Slant modulation affects baked glyph outline geometry')
+})
+
+test('text-on-path supports explicit pixel offset mode and baseline shift', () => {
+  const node = text({ textOnPath: { enabled: true, offsetMode: 'pixels', offset: 30, baselineShift: 5 } })
+  const glyphs = geometry(node)
+  assert.ok(glyphs.length > 0)
+  assert.ok(glyphs[0].x > 0)
 })
 
 test('closed-loop Bézier baseline loops seamlessly and multi-contour paths compute length', () => {
