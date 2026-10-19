@@ -20,7 +20,11 @@ function freezeEffects(effects: readonly LayerEffect[]): readonly LayerEffect[] 
 
 function freezeCompound(compound: BooleanCompound): BooleanCompound {
   if (frozenCompounds.has(compound)) return compound
-  const frozen = Object.freeze({ operation: compound.operation, operands: Object.freeze(compound.operands.map(operand => freezeElement(operand) as VectorElement)) })
+  const frozen = Object.freeze({
+    operation: compound.operation,
+    operands: Object.freeze(compound.operands.map(operand => freezeElement(operand) as VectorElement)),
+    ...(compound.mutedOperandIds ? { mutedOperandIds: Object.freeze([...compound.mutedOperandIds]) } : {}),
+  })
   frozenCompounds.add(frozen)
   return frozen
 }
@@ -163,6 +167,7 @@ export function validateElement(element: SceneElement, depth = 0): void {
   if (element.type === 'path' && element.boolean !== undefined) {
     const compound = element.boolean
     if (!compound || !['union', 'subtract', 'intersect', 'exclude'].includes(compound.operation) || !Array.isArray(compound.operands) || compound.operands.length < 2 || compound.operands.length > 2000) throw new Error('Invalid boolean compound')
+    if (compound.mutedOperandIds !== undefined && (!Array.isArray(compound.mutedOperandIds) || !compound.mutedOperandIds.every(id => typeof id === 'string'))) throw new Error('Invalid muted operands')
     const ids = new Set<string>()
     for (const operand of compound.operands) {
       if (!operand || !['rectangle', 'ellipse', 'path'].includes(operand.type) || ids.has(operand.id)) throw new Error('Invalid boolean operand')

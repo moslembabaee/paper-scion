@@ -457,6 +457,54 @@
   border-color: rgba(129, 173, 236, 0.4);
 }
 
+.sel-component-badge.is-compound .sel-component-badge-inner {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.sel-component-badge.is-compound .sel-component-badge-tag {
+  color: #f59e0b;
+}
+
+.sel-operand-outline {
+  fill: none;
+  stroke: var(--paper-accent-text, #81adec);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.sel-operand-outline.is-hovered {
+  stroke: #f59e0b;
+  stroke-width: 1.5;
+  stroke-dasharray: 2 2;
+}
+
+.sel-operand-box {
+  position: absolute;
+  outline: 1.5px dashed var(--paper-accent-text, #81adec);
+  pointer-events: auto;
+  cursor: move;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.sel-operand-tag {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #111111ee;
+  border: 1px solid var(--paper-accent-text, #81adec);
+  color: var(--paper-accent-text, #81adec);
+  font: 9px var(--font-mono);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .sel-badge-stat {
   font: 9px var(--font-mono);
   color: var(--paper-text-muted);

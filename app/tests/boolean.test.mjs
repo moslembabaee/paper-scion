@@ -468,3 +468,202 @@ test('uniformly scaled primitive sources retain their fill boundaries and dashed
   assert.deepEqual(outline.bounds, expected.bounds)
   close(area(outline.d), area(expected.d))
 })
+
+test('live boolean operators switch non-destructively preserving editable source paths', () => {
+  const store = fixture()
+  const compound = store.booleanSelection('union')
+  assert.equal(compound.boolean.operation, 'union')
+  assert.equal(compound.boolean.operands.length, 2)
+  close(area(compound.d), 17500)
+
+  // Switch to Subtract
+  store.setBooleanOperation(compound.id, 'subtract')
+  let current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operation, 'subtract')
+  assert.equal(current.boolean.operands.length, 2)
+  close(area(current.d), 7500)
+
+  // Switch to Intersect
+  store.setBooleanOperation(compound.id, 'intersect')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operation, 'intersect')
+  assert.equal(current.boolean.operands.length, 2)
+  close(area(current.d), 2500)
+
+  // Switch to Exclude
+  store.setBooleanOperation(compound.id, 'exclude')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operation, 'exclude')
+  assert.equal(current.boolean.operands.length, 2)
+  close(area(current.d), 15000)
+
+  // Switch back to Union
+  store.setBooleanOperation(compound.id, 'union')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operation, 'union')
+  close(area(current.d), 17500)
+  assert.equal(current.boolean.operands[0].id, 'a')
+  assert.equal(current.boolean.operands[1].id, 'b')
+})
+
+test('real-time contour re-baking on sub-element transform (position, dimension, rotation, radius)', () => {
+  const store = fixture()
+  const compound = store.booleanSelection('union')
+  close(area(compound.d), 17500)
+
+  // 1. Sub-element position transform
+  store.updateBooleanOperand(compound.id, 'b', { x: 100, y: 100 })
+  let updated = store.getSnapshot().elements[compound.id]
+  assert.equal(updated.boolean.operands[1].x, 100)
+  assert.equal(updated.boolean.operands[1].y, 100)
+  // Non-overlapping squares: 100*100 + 100*100 = 20000
+  close(area(updated.d), 20000)
+
+  // 2. Sub-element dimension transform
+  store.updateBooleanOperand(compound.id, 'b', { width: 50, height: 50 })
+  updated = store.getSnapshot().elements[compound.id]
+  assert.equal(updated.boolean.operands[1].width, 50)
+  assert.equal(updated.boolean.operands[1].height, 50)
+  // 10000 + 2500 = 12500
+  close(area(updated.d), 12500)
+
+  // 3. Sub-element corner radius transform
+  store.updateBooleanOperand(compound.id, 'a', { cornerRadius: 20 })
+  updated = store.getSnapshot().elements[compound.id]
+  assert.equal(updated.boolean.operands[0].cornerRadius, 20)
+  // Rounded corners decrease area
+  assert.ok(area(updated.d) < 12500)
+
+  // 4. Sub-element rotation transform
+  store.updateBooleanOperand(compound.id, 'b', { rotation: 45 })
+  updated = store.getSnapshot().elements[compound.id]
+  assert.equal(updated.boolean.operands[1].rotation, 45)
+
+  // 5. Undo restores all previous states accurately
+  store.undo() // undo rotation
+  assert.equal(store.getSnapshot().elements[compound.id].boolean.operands[1].rotation, 0)
+  store.undo() // undo radius
+  assert.equal(store.getSnapshot().elements[compound.id].boolean.operands[0].cornerRadius, 0)
+  store.undo() // undo dimension
+  assert.equal(store.getSnapshot().elements[compound.id].boolean.operands[1].width, 100)
+  store.undo() // undo position
+  assert.equal(store.getSnapshot().elements[compound.id].boolean.operands[1].x, 50)
+  close(area(store.getSnapshot().elements[compound.id].d), 17500)
+})
+
+test('sub-element operand selection, highlighting, and deselect tracking', () => {
+  const store = fixture()
+  const compound = store.booleanSelection('union')
+
+  let operandNotifications = 0
+  let highlightNotifications = 0
+  const unsubOperand = store.subscribeSelectedCompoundOperand(() => operandNotifications++)
+  const unsubHighlight = store.subscribeHighlightedBooleanSource(() => highlightNotifications++)
+
+  assert.equal(store.getSelectedCompoundOperand(), null)
+  assert.equal(store.getHighlightedBooleanSource(), null)
+
+  // Select operand 'b'
+  store.setSelectedCompoundOperand({ compoundId: compound.id, operandId: 'b' })
+  assert.deepEqual(store.getSelectedCompoundOperand(), { compoundId: compound.id, operandId: 'b' })
+  assert.equal(store.getHighlightedBooleanSource(), 'b')
+  assert.ok(operandNotifications > 0)
+  assert.ok(highlightNotifications > 0)
+
+  // Retrieve operand directly via getCompoundOperand
+  const op = store.getCompoundOperand(compound.id, 'b')
+  assert.ok(op)
+  assert.equal(op.id, 'b')
+  assert.equal(op.name, 'Cutter')
+
+  // Deselection clears operand selection
+  store.select([])
+  assert.equal(store.getSelectedCompoundOperand(), null)
+
+  unsubOperand()
+  unsubHighlight()
+})
+
+test('operand muting and unmuting re-bakes contour in real time', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'a', x: 0, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'b', x: 50, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'c', x: 100, y: 0, width: 100, height: 100 })
+  store.select(['a', 'b', 'c'])
+  const compound = store.booleanSelection('union')
+  // Total union width 200, height 100 -> area 20000
+  close(area(compound.d), 20000)
+
+  // Mute middle operand 'b'
+  store.toggleBooleanOperandMute(compound.id, 'b')
+  let current = store.getSnapshot().elements[compound.id]
+  assert.deepEqual(current.boolean.mutedOperandIds, ['b'])
+  // Without 'b', shapes 'a' (0..100) and 'c' (100..200) meet at x=100
+  // Both aliases should work
+  store.toggleBooleanOperandMuted(compound.id, 'b') // unmute
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.mutedOperandIds, undefined)
+  close(area(current.d), 20000)
+})
+
+test('duplicate, remove, and extract boolean operands', () => {
+  const store = fixture()
+  const compound = store.booleanSelection('union')
+  assert.equal(compound.boolean.operands.length, 2)
+
+  // Duplicate operand 'b'
+  store.duplicateBooleanOperand(compound.id, 'b')
+  let current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 3)
+  const clone = current.boolean.operands[2]
+  assert.equal(clone.name, 'Cutter Copy')
+  assert.equal(clone.x, 60)
+  assert.equal(clone.y, 60)
+
+  // Remove the clone
+  store.removeBooleanOperand(compound.id, clone.id)
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 2)
+
+  // Extract operand 'b' back to the scene
+  store.duplicateBooleanOperand(compound.id, 'b') // add 3rd so we can extract
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 3)
+
+  store.extractBooleanOperand(compound.id, 'b')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 2)
+  // Extracted 'b' is now a top-level element in the scene
+  assert.ok(store.getSnapshot().elements.b)
+  assert.equal(store.getSnapshot().elements.b.type, 'path')
+})
+
+test('nested compound shapes, group, and unwrap hierarchy', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'a', x: 0, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'b', x: 50, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'c', x: 100, y: 0, width: 100, height: 100 })
+  store.select(['a', 'b', 'c'])
+  const compound = store.booleanSelection('union')
+
+  // Group operands 'b' and 'c' into a nested subtract compound
+  store.groupBooleanOperands(compound.id, ['b', 'c'], 'subtract')
+  let current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 2)
+  const nested = current.boolean.operands[1]
+  assert.equal(nested.type, 'path')
+  assert.ok(nested.boolean)
+  assert.equal(nested.boolean.operation, 'subtract')
+  assert.equal(nested.boolean.operands.length, 2)
+
+  // Change nested boolean operation to intersect
+  store.setNestedBooleanOperation(compound.id, nested.id, 'intersect')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands[1].boolean.operation, 'intersect')
+
+  // Unwrap the nested boolean back into parent compound
+  store.unwrapNestedBoolean(compound.id, nested.id)
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 3)
+})
+

@@ -1,5 +1,5 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowRight, ArrowUpRight, Diamond, Component as Diamonds, PenTool, Plus, RotateCcw, Sparkles, Unlink } from 'lucide-react'
+import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { ArrowDown, ArrowRight, ArrowUpRight, Combine, Diamond, Component as Diamonds, Layers, PenTool, Plus, RotateCcw, Sparkles, Unlink } from 'lucide-react'
 import type { ViewportController } from '../canvas'
 import type { Bounds, Point } from '../canvas/types'
 import { getWorldBounds } from './geometry'
@@ -11,7 +11,8 @@ import { SnapGuides } from './SnapGuides'
 import { SpatialBoundsIndex } from './spatialIndex'
 import { getSnapConfig } from './snapConfig'
 import type { SceneStore } from './store'
-import type { AutoLayout, ElementGeometry } from './types'
+import type { AutoLayout, BooleanOperation, ElementGeometry } from './types'
+import { transformedSource } from './booleanGeometry'
 import { AutoLayoutHandles } from './AutoLayoutHandles'
 import { dragSpacing, layoutHandleCursor } from './layoutHandles'
 import type { SpacingProperty } from './layoutHandles'
@@ -62,6 +63,35 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
   const overlayRef = useRef<HTMLDivElement>(null)
   const box = selectionBox(state, state.selection)
   const selectedNode = state.selection.length === 1 ? state.elements[state.selection[0]] : undefined
+
+  const selectedOperandInfo = useSyncExternalStore(
+    store.subscribeSelectedCompoundOperand,
+    store.getSelectedCompoundOperand,
+    store.getSelectedCompoundOperand
+  )
+  const highlightedSourceId = useSyncExternalStore(
+    store.subscribeHighlightedBooleanSource,
+    store.getHighlightedBooleanSource,
+    store.getHighlightedBooleanSource
+  )
+
+  const activeOperand =
+    selectedNode?.type === 'path' && selectedNode.boolean && selectedOperandInfo?.compoundId === selectedNode.id
+      ? store.getCompoundOperand(selectedNode.id, selectedOperandInfo.operandId)
+      : null
+  const hoveredOperand =
+    selectedNode?.type === 'path' && selectedNode.boolean && highlightedSourceId && highlightedSourceId !== activeOperand?.id
+      ? store.getCompoundOperand(selectedNode.id, highlightedSourceId)
+      : null
+
+  const activeOperandTransform =
+    activeOperand && selectedNode?.type === 'path'
+      ? transformedSource(activeOperand, selectedNode)
+      : null
+  const hoveredOperandTransform =
+    hoveredOperand && selectedNode?.type === 'path'
+      ? transformedSource(hoveredOperand, selectedNode)
+      : null
 
   useLayoutEffect(() => controller.subscribe(snapshot => setCamera(snapshot.camera)), [controller])
 
@@ -285,6 +315,26 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
 
   return <div ref={overlayRef} className="selection-overlay" data-testid="selection-overlay" style={{ cursor: activeCursor ?? undefined }} data-transforming={activeCursor !== null}>
     <SnapGuides guides={guides} camera={camera} />
+    {(hoveredOperandTransform || activeOperandTransform) && (
+      <svg className="snap-guides-svg" aria-hidden="true">
+        {hoveredOperandTransform && (
+          <path
+            d={hoveredOperandTransform.d}
+            className="sel-operand-outline is-hovered"
+            vectorEffect="non-scaling-stroke"
+            transform={`matrix(${camera.zoom} 0 0 ${camera.zoom} ${camera.x} ${camera.y})`}
+          />
+        )}
+        {activeOperandTransform && (
+          <path
+            d={activeOperandTransform.d}
+            className="sel-operand-outline"
+            vectorEffect="non-scaling-stroke"
+            transform={`matrix(${camera.zoom} 0 0 ${camera.zoom} ${camera.x} ${camera.y})`}
+          />
+        )}
+      </svg>
+    )}
     {marquee && <div className="marquee-rect" data-testid="marquee-rect" style={{ left: marquee.x * camera.zoom + camera.x, top: marquee.y * camera.zoom + camera.y, width: marquee.width * camera.zoom, height: marquee.height * camera.zoom }} />}
     {!panMode && box && <div className="sel-box" data-testid="selection-box" aria-label="Selection bounds" style={{ left: box.x * camera.zoom + camera.x, top: box.y * camera.zoom + camera.y, width: box.width * camera.zoom, height: box.height * camera.zoom, transform: `rotate(${box.rotation}deg)` }}>
       {HANDLES.map(handle => <div key={handle.id} data-handle={handle.id} className="sel-handle" title={`Resize ${handle.id.toUpperCase()} · Shift for proportions`} style={{ left: `${handle.x * 100}%`, top: `${handle.y * 100}%`, cursor: resizeCursor(box.rotation + handle.angle) }} />)}
@@ -480,6 +530,131 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
           <span>Edit Vector Path</span>
           <kbd>↵</kbd>
         </button>
+      </div>
+    )}
+    {!panMode && box && selectedNode?.type === 'path' && selectedNode.boolean && !activeCursor && (
+      <div
+        className="sel-component-badge is-compound"
+        data-testid="sel-compound-badge"
+        style={{
+          left: box.x * camera.zoom + camera.x,
+          top: badgeTop,
+        }}
+      >
+        <div className="sel-component-badge-inner">
+          <span
+            className="sel-component-badge-tag"
+            title={`Compound Shape (${selectedNode.boolean.operation}) · ${selectedNode.boolean.operands.length} sources`}
+          >
+            <Combine size={11} />
+            <span>Compound: {selectedNode.boolean.operation}</span>
+          </span>
+          {(['union', 'subtract', 'intersect', 'exclude'] as const).map(op => {
+            const symbols: Record<BooleanOperation, string> = {
+              union: '∪',
+              subtract: '∖',
+              intersect: '∩',
+              exclude: '⊕',
+            }
+            const isCurrent = selectedNode.boolean!.operation === op
+            return (
+              <button
+                key={op}
+                type="button"
+                className={`sel-component-btn ${isCurrent ? 'primary' : ''}`}
+                title={`Switch live boolean operator to ${op.toUpperCase()} (${symbols[op]})`}
+                onClick={e => {
+                  e.stopPropagation()
+                  store.setBooleanOperation(selectedNode.id, op)
+                }}
+              >
+                <span>{symbols[op]}</span>
+                <span>{op[0].toUpperCase() + op.slice(1)}</span>
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            className="sel-component-btn"
+            title="Cycle active sub-element operand"
+            onClick={e => {
+              e.stopPropagation()
+              const operands = selectedNode.boolean!.operands
+              if (operands.length === 0) return
+              const currentId = selectedOperandInfo?.operandId
+              const currentIdx = operands.findIndex(op => op.id === currentId)
+              const nextIdx = currentIdx === -1 ? 0 : (currentIdx + 1) % operands.length
+              const nextOp = operands[nextIdx]
+              store.setSelectedCompoundOperand({ compoundId: selectedNode.id, operandId: nextOp.id })
+              store.highlightBooleanSource(nextOp.id)
+            }}
+          >
+            <Layers size={10} />
+            <span>Sub-element</span>
+          </button>
+          <button
+            type="button"
+            className="sel-component-btn"
+            title="Release editable source layers"
+            disabled={!!selectedNode.mask}
+            onClick={e => {
+              e.stopPropagation()
+              store.releaseBoolean(selectedNode.id)
+            }}
+          >
+            <Unlink size={10} />
+            <span>Release</span>
+          </button>
+        </div>
+      </div>
+    )}
+    {!panMode && box && selectedNode?.type === 'path' && selectedNode.boolean && activeOperand && activeOperandTransform && !activeCursor && (
+      <div
+        className="sel-operand-box"
+        data-testid="sel-operand-box"
+        style={{
+          left: activeOperandTransform.bounds.x * camera.zoom + camera.x,
+          top: activeOperandTransform.bounds.y * camera.zoom + camera.y,
+          width: Math.max(12, activeOperandTransform.bounds.width * camera.zoom),
+          height: Math.max(12, activeOperandTransform.bounds.height * camera.zoom),
+        }}
+        title={`Drag to reposition ${activeOperand.name} (live contour re-baking)`}
+        onPointerDown={e => {
+          e.stopPropagation()
+          e.preventDefault()
+          const startX = activeOperand.x
+          const startY = activeOperand.y
+          const screenStart = { x: e.clientX, y: e.clientY }
+          const compoundId = selectedNode.id
+          const operandId = activeOperand.id
+          const sx = selectedNode.viewBox[2] / selectedNode.width
+          const sy = selectedNode.viewBox[3] / selectedNode.height
+
+          store.beginTransaction('Move boolean operand')
+
+          const onPointerMove = (moveEv: PointerEvent) => {
+            const dx = (moveEv.clientX - screenStart.x) / camera.zoom
+            const dy = (moveEv.clientY - screenStart.y) / camera.zoom
+            store.updateBooleanOperand(compoundId, operandId, {
+              x: Math.round((startX + dx * sx) * 100) / 100,
+              y: Math.round((startY + dy * sy) * 100) / 100,
+            })
+          }
+
+          const onPointerUp = () => {
+            window.removeEventListener('pointermove', onPointerMove)
+            window.removeEventListener('pointerup', onPointerUp)
+            store.endTransaction()
+          }
+
+          window.addEventListener('pointermove', onPointerMove)
+          window.addEventListener('pointerup', onPointerUp)
+        }}
+      >
+        <div className="sel-operand-tag">
+          <span>{activeOperand.name}</span>
+          <span style={{ opacity: 0.6 }}>({activeOperand.type})</span>
+        </div>
       </div>
     )}
     <MeasurementHUD store={store} controller={controller} suppressed={panMode || activeCursor !== null} />

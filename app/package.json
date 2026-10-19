@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "bridge": "node ../mcp-server/dist/mcp/bridge-cli.js",
     "build:server": "tsc -p tsconfig.server.json && node server/build-preview-runtime.mjs",
-    "test:cloud": "npm run build:server && node --test server/tests/*.test.mjs",
+    "test:cloud": "npm run build:server && node --experimental-strip-types --test server/tests/*.test.mjs",
     "dev:server": "node server/dist/server/index.js"
   },
   "dependencies": {

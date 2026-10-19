@@ -7,7 +7,11 @@ import {
   Copy,
   Download,
   Eye,
+  EyeOff,
+  Layers,
   Scissors,
+  Trash2,
+  Unlink,
 } from 'lucide-react'
 import type { BooleanOperation, PathElement, VectorElement } from './types'
 import { vectorPathData } from './booleanGeometry'
@@ -304,18 +308,36 @@ function SourceEditor({
   count,
   subtract,
   disabled,
+  isSelected,
+  muted,
   onChange,
   onMove,
   onHighlight,
+  onSelect,
+  onToggleMute,
+  onDuplicate,
+  onExtract,
+  onRemove,
+  onUnwrap,
+  onChangeNestedOp,
 }: {
   source: VectorElement
   index: number
   count: number
   subtract: boolean
   disabled: boolean
+  isSelected: boolean
+  muted: boolean
   onChange: (patch: Parameters<SceneStore['updateBooleanOperand']>[2]) => boolean
   onMove: (direction: -1 | 1) => void
   onHighlight: (id: string | null) => void
+  onSelect: () => void
+  onToggleMute: () => void
+  onDuplicate: () => void
+  onExtract: () => void
+  onRemove: () => void
+  onUnwrap?: () => void
+  onChangeNestedOp?: (op: BooleanOperation) => void
 }) {
   const fields = [
     ['x', 'X'],
@@ -329,19 +351,24 @@ function SourceEditor({
 
   return (
     <details
-      className="boolean-source"
+      className={`boolean-source ${isSelected ? 'is-selected' : ''}`}
+      open={isSelected ? true : undefined}
       onPointerEnter={() => onHighlight(source.id)}
       onPointerLeave={() => onHighlight(null)}
-      onFocus={() => onHighlight(source.id)}
+      onFocus={() => {
+        onHighlight(source.id)
+        onSelect()
+      }}
       onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget)) onHighlight(null)
       }}
     >
-      <summary>
+      <summary onClick={onSelect}>
         <span className="boolean-source-mark">
           {source.type === 'ellipse' ? '○' : source.type === 'rectangle' ? '□' : isCompound ? '⊞' : '◇'}
         </span>
         <span>{source.name}</span>
+        {muted && <span className="boolean-layer-badge is-muted-badge">MUTED</span>}
         <span
           className={`boolean-source-kind ${subtract ? (index === 0 ? 'is-base' : 'is-cutter') : isCompound ? 'is-compound' : ''}`}
         >
@@ -355,22 +382,114 @@ function SourceEditor({
         </span>
       </summary>
 
-      {/* If source is itself a nested compound, show its non-destructive child structure */}
+      {/* Direct Operand Action Bar */}
+      <div className="boolean-source-toolbar">
+        <button
+          type="button"
+          className={`boolean-source-btn ${muted ? 'is-muted' : ''}`}
+          disabled={disabled}
+          title={muted ? 'Include operand in boolean calculation' : 'Mute operand'}
+          onClick={e => {
+            e.stopPropagation()
+            onToggleMute()
+          }}
+        >
+          {muted ? <EyeOff size={11} /> : <Eye size={11} />}
+          <span>{muted ? 'MUTED' : 'ACTIVE'}</span>
+        </button>
+        <button
+          type="button"
+          className="boolean-source-btn"
+          disabled={disabled}
+          title="Duplicate this operand in compound"
+          onClick={e => {
+            e.stopPropagation()
+            onDuplicate()
+          }}
+        >
+          <Copy size={11} />
+          <span>DUPLICATE</span>
+        </button>
+        <button
+          type="button"
+          className="boolean-source-btn"
+          disabled={disabled}
+          title="Extract operand as a separate canvas layer"
+          onClick={e => {
+            e.stopPropagation()
+            onExtract()
+          }}
+        >
+          <Unlink size={11} />
+          <span>EXTRACT</span>
+        </button>
+        {isCompound && onUnwrap && (
+          <button
+            type="button"
+            className="boolean-source-btn"
+            disabled={disabled}
+            title="Unwrap nested compound into parent operands"
+            onClick={e => {
+              e.stopPropagation()
+              onUnwrap()
+            }}
+          >
+            <Layers size={11} />
+            <span>UNWRAP</span>
+          </button>
+        )}
+        {count > 2 && (
+          <button
+            type="button"
+            className="boolean-source-btn is-delete"
+            disabled={disabled}
+            title="Remove operand from compound"
+            onClick={e => {
+              e.stopPropagation()
+              onRemove()
+            }}
+          >
+            <Trash2 size={11} />
+          </button>
+        )}
+      </div>
+
+      {/* If source is itself a nested compound, show operator switcher and child structure */}
       {isCompound && (
-        <div className="boolean-nested-list" aria-label="Nested compound operands">
-          <span className="section-caption">
-            NESTED {source.boolean!.operation.toUpperCase()} ({source.boolean!.operands.length} OPERANDS)
-          </span>
-          {source.boolean!.operands.map((sub, subIdx) => (
-            <div key={sub.id} className="boolean-nested-row">
-              <span>{sub.type === 'ellipse' ? '○' : sub.type === 'rectangle' ? '□' : '◇'}</span>
-              <span>{sub.name}</span>
-              <span className="boolean-nested-badge">
-                #{subIdx + 1} {sub.type}
-              </span>
+        <>
+          {onChangeNestedOp && source.boolean && (
+            <div className="boolean-nested-op-row">
+              <span className="section-caption">NESTED OP</span>
+              <div className="boolean-nested-op-buttons">
+                {(['union', 'subtract', 'intersect', 'exclude'] as const).map(op => (
+                  <button
+                    key={op}
+                    type="button"
+                    className={`cag-tab-btn ${source.boolean!.operation === op ? 'active' : ''}`}
+                    disabled={disabled}
+                    onClick={() => onChangeNestedOp(op)}
+                  >
+                    {op.toUpperCase()}
+                  </button>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          )}
+          <div className="boolean-nested-list" aria-label="Nested compound operands">
+            <span className="section-caption">
+              NESTED {source.boolean!.operation.toUpperCase()} ({source.boolean!.operands.length} OPERANDS)
+            </span>
+            {source.boolean!.operands.map((sub, subIdx) => (
+              <div key={sub.id} className="boolean-nested-row">
+                <span>{sub.type === 'ellipse' ? '○' : sub.type === 'rectangle' ? '□' : '◇'}</span>
+                <span>{sub.name}</span>
+                <span className="boolean-nested-badge">
+                  #{subIdx + 1} {sub.type}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <div className="boolean-source-order">
@@ -484,7 +603,18 @@ export function BooleanBar({ store }: { store: SceneStore }) {
   )
   const [destructive, setDestructive] = useState(false)
   const [error, setError] = useState('')
-  const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const storeHighlightedId = useSyncExternalStore(
+    store.subscribeHighlightedBooleanSource,
+    store.getHighlightedBooleanSource,
+    store.getHighlightedBooleanSource
+  )
+  const selectedOperandInfo = useSyncExternalStore(
+    store.subscribeSelectedCompoundOperand,
+    store.getSelectedCompoundOperand,
+    store.getSelectedCompoundOperand
+  )
+  const highlightedId = storeHighlightedId
+  const setHighlightedId = (id: string | null) => store.highlightBooleanSource(id)
   const preview = useSyncExternalStore(
     store.subscribeBooleanPreview,
     store.getBooleanPreview,
@@ -622,27 +752,53 @@ export function BooleanBar({ store }: { store: SceneStore }) {
           </p>
 
           <div className="boolean-sources" aria-label="Boolean source shapes">
-            {compound.boolean!.operands.map((source, index, sources) => (
-              <SourceEditor
-                key={source.id}
-                source={source}
-                index={index}
-                count={sources.length}
-                subtract={compound.boolean!.operation === 'subtract'}
-                disabled={disabled}
-                onHighlight={setHighlightedId}
-                onChange={patch => run(() => store.updateBooleanOperand(compound.id, source.id, patch))}
-                onMove={direction =>
-                  run(() => {
-                    const order = sources.map(operand => operand.id)
-                    const target = index + direction
-                    if (target < 0 || target >= order.length) return
-                    ;[order[index], order[target]] = [order[target], order[index]]
-                    store.reorderBooleanOperands(compound.id, order)
-                  })
-                }
-              />
-            ))}
+            {compound.boolean!.operands.map((source, index, sources) => {
+              const isSelected =
+                selectedOperandInfo?.compoundId === compound.id &&
+                selectedOperandInfo?.operandId === source.id
+              const isMuted = compound.boolean!.mutedOperandIds?.includes(source.id) ?? false
+              return (
+                <SourceEditor
+                  key={source.id}
+                  source={source}
+                  index={index}
+                  count={sources.length}
+                  subtract={compound.boolean!.operation === 'subtract'}
+                  disabled={disabled}
+                  isSelected={isSelected}
+                  muted={isMuted}
+                  onHighlight={setHighlightedId}
+                  onSelect={() => {
+                    store.setSelectedCompoundOperand({ compoundId: compound.id, operandId: source.id })
+                    store.highlightBooleanSource(source.id)
+                  }}
+                  onToggleMute={() => run(() => store.toggleBooleanOperandMute(compound.id, source.id))}
+                  onDuplicate={() => run(() => store.duplicateBooleanOperand(compound.id, source.id))}
+                  onExtract={() => run(() => store.extractBooleanOperand(compound.id, source.id))}
+                  onRemove={() => run(() => store.removeBooleanOperand(compound.id, source.id))}
+                  onUnwrap={
+                    source.type === 'path' && source.boolean
+                      ? () => run(() => store.unwrapNestedBoolean(compound.id, source.id))
+                      : undefined
+                  }
+                  onChangeNestedOp={
+                    source.type === 'path' && source.boolean
+                      ? op => run(() => store.setNestedBooleanOperation(compound.id, source.id, op))
+                      : undefined
+                  }
+                  onChange={patch => run(() => store.updateBooleanOperand(compound.id, source.id, patch))}
+                  onMove={direction =>
+                    run(() => {
+                      const order = sources.map(operand => operand.id)
+                      const target = index + direction
+                      if (target < 0 || target >= order.length) return
+                      ;[order[index], order[target]] = [order[target], order[index]]
+                      store.reorderBooleanOperands(compound.id, order)
+                    })
+                  }
+                />
+              )
+            })}
           </div>
 
           <div className="boolean-footer">
