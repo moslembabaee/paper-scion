@@ -90,19 +90,28 @@ export function NoiseInspector({
       <div className="noise-presets-section">
         <span className="section-caption">MATERIAL PRESETS</span>
         <div className="noise-preset-chips" role="group" aria-label="Procedural noise presets">
-          {PROCEDURAL_NOISE_PRESETS.map(preset => (
-            <button
-              key={preset.id}
-              type="button"
-              className={`noise-preset-chip ${params.noiseType === preset.params.noiseType ? 'preset-active' : ''}`}
-              title={preset.description}
-              aria-label={`Apply ${preset.name} preset`}
-              onClick={() => update(preset.params)}
-            >
-              <Wand2 size={10} />
-              <span>{preset.name}</span>
-            </button>
-          ))}
+          {PROCEDURAL_NOISE_PRESETS.map(preset => {
+            const isPresetActive =
+              params.noiseType === preset.params.noiseType &&
+              Math.abs(params.frequency - preset.params.frequency) < 0.01 &&
+              params.octaves === preset.params.octaves &&
+              Math.abs(params.lacunarity - preset.params.lacunarity) < 0.01 &&
+              Math.abs(params.normalPerturbation - preset.params.normalPerturbation) < 0.01 &&
+              Math.abs(params.displacement - preset.params.displacement) < 0.01
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                className={`noise-preset-chip ${isPresetActive ? 'preset-active' : ''}`}
+                title={preset.description}
+                aria-label={`Apply ${preset.name} preset`}
+                onClick={() => update(preset.params)}
+              >
+                <Wand2 size={10} />
+                <span>{preset.name}</span>
+              </button>
+            )
+          })}
         </div>
       </div>
 

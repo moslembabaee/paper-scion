@@ -690,18 +690,26 @@ export function MeshInspector({
           <div className="mesh-presets-section">
             <span className="section-caption">DISPLACEMENT PRESETS</span>
             <div className="mesh-preset-chips" role="group" aria-label="Displacement presets">
-              {MESH_DISPLACEMENT_PRESETS.map(preset => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className="mesh-preset-chip"
-                  title={preset.description}
-                  aria-label={`Apply ${preset.name} displacement preset`}
-                  onClick={() => applyDisplacementPreset(preset)}
-                >
-                  <span>{preset.name}</span>
-                </button>
-              ))}
+              {MESH_DISPLACEMENT_PRESETS.map(preset => {
+                const isPresetActive =
+                  (mesh.noiseType ?? 'simplex') === preset.noiseType &&
+                  (mesh.octaves ?? 3) === preset.octaves &&
+                  Math.abs((mesh.lacunarity ?? 2.0) - preset.lacunarity) < 0.01 &&
+                  Math.abs((mesh.frequency ?? 3) - preset.frequency) < 0.01 &&
+                  Math.abs((mesh.normalPerturbation ?? 0.2) - preset.normalPerturbation) < 0.01
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`mesh-preset-chip ${isPresetActive ? 'preset-active' : ''}`}
+                    title={preset.description}
+                    aria-label={`Apply ${preset.name} displacement preset`}
+                    onClick={() => applyDisplacementPreset(preset)}
+                  >
+                    <span>{preset.name}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -741,7 +749,7 @@ export function MeshInspector({
           />
           <MeshRange
             label="Turbulence"
-            value={mesh.turbulence}
+            value={mesh.turbulence ?? 0.3}
             onChange={turbulence => update({ turbulence })}
           />
           <MeshRange
@@ -749,7 +757,7 @@ export function MeshInspector({
             min={1}
             max={12}
             step={0.1}
-            value={mesh.frequency}
+            value={mesh.frequency ?? 3}
             onChange={frequency => update({ frequency })}
           />
           <MeshRange

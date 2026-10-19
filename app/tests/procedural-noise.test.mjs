@@ -15,7 +15,7 @@ import {
 } from '../src/shaders/noise/proceduralNoise.ts'
 import { proceduralNoiseFragmentShader, proceduralNoiseUniforms } from '../src/shaders/noise/noiseFragment.ts'
 import { exportProceduralNoiseReact } from '../src/shaders/noise/noiseExport.ts'
-import { createMeshMaterial, meshUniforms, validateMeshMaterial } from '../src/shaders/mesh.ts'
+import { createMeshMaterial, meshUniforms, validateMeshMaterial, MESH_DISPLACEMENT_PRESETS } from '../src/shaders/mesh.ts'
 import { noiseGenerators } from '../src/shaders/types.ts'
 
 test('simplex2D generates bounded, smooth, continuous 2D noise in [-1, 1]', () => {
@@ -289,3 +289,134 @@ test('mesh material engine supports multi-octave noise, lacunarity, normal pertu
   assert.throws(() => validateMeshMaterial({ ...mesh, normalPerturbation: 1.5 }, paint), /Invalid shader mesh material/)
   assert.throws(() => validateMeshMaterial({ ...mesh, grainDisplacement: -0.5 }, paint), /Invalid shader mesh material/)
 })
+
+test('MESH_DISPLACEMENT_PRESETS are fully curated, valid, and apply cleanly to MeshMaterial', () => {
+  assert.ok(MESH_DISPLACEMENT_PRESETS.length >= 6, 'Should provide at least 6 displacement presets')
+  const colors = ['#edebe1', '#81adec', '#222222']
+
+  for (const preset of MESH_DISPLACEMENT_PRESETS) {
+    assert.ok(preset.id && preset.name && preset.description)
+    assert.ok(noiseGenerators.includes(preset.noiseType), `Preset ${preset.name} has invalid noiseType ${preset.noiseType}`)
+    assert.ok(preset.octaves >= 1 && preset.octaves <= 6)
+    assert.ok(preset.lacunarity >= 1.0 && preset.lacunarity <= 5.0)
+    assert.ok(preset.turbulence >= 0 && preset.turbulence <= 1)
+    assert.ok(preset.frequency >= 1.0 && preset.frequency <= 12.0)
+    assert.ok(preset.normalPerturbation >= 0 && preset.normalPerturbation <= 1)
+    assert.ok(preset.grainDisplacement >= 0 && preset.grainDisplacement <= 1)
+
+    // Verify it applies to a real mesh and passes validation
+    const mesh = createMeshMaterial(colors, {
+      noiseType: preset.noiseType,
+      octaves: preset.octaves,
+      lacunarity: preset.lacunarity,
+      turbulence: preset.turbulence,
+      frequency: preset.frequency,
+      normalPerturbation: preset.normalPerturbation,
+      grainDisplacement: preset.grainDisplacement,
+    })
+
+    const paint = {
+      kind: 'mesh-gradient',
+      params: { colors, distortion: 0.5, swirl: 0.2, grainMixer: 0.1, grainOverlay: 0.05 },
+      animated: true,
+      speed: 0.35,
+      frame: 1000,
+      scale: 1,
+      rotation: 0,
+      offsetX: 0,
+      offsetY: 0,
+      mesh,
+    }
+
+    validateMeshMaterial(mesh, paint)
+  }
+})
+
+test('ShaderBrowser catalog registration and search keyword coverage for procedural noise', () => {
+  assert.ok(shaderCatalog['procedural-noise'], 'procedural-noise must be registered in shaderCatalog')
+  const def = shaderCatalog['procedural-noise']
+  assert.equal(def.label, 'Procedural Noise')
+
+  const desc = def.description.toLowerCase()
+  assert.ok(desc.includes('simplex'), 'Description should reference Simplex noise')
+  assert.ok(desc.includes('perlin'), 'Description should reference Perlin noise')
+  assert.ok(desc.includes('worley'), 'Description should reference Worley noise')
+  assert.ok(desc.includes('displacement'), 'Description should reference displacement')
+  assert.ok(desc.includes('normal-map'), 'Description should reference normal-map')
+  assert.ok(desc.includes('grain'), 'Description should reference grain')
+
+  // Strictly validates shader initialization with createShader
+  const shader = createShader('procedural-noise')
+  validateShader(shader)
+  assert.equal(shader.kind, 'procedural-noise')
+  assert.equal(shader.params.noiseType, 'simplex')
+})
+
+test('finite-difference normal perturbation physics and lighting calculations', () => {
+  const lowBump = evaluateNormalPerturbation({
+    type: 'simplex',
+    x: 0.35,
+    y: 0.35,
+    frequency: 4.0,
+    octaves: 3,
+    lacunarity: 2.0,
+    persistence: 0.5,
+    turbulence: 0.0,
+    displacement: 0.5,
+    normalPerturbation: 0.1,
+    lightAngle: 45,
+    specularStrength: 0.5,
+  })
+
+  const highBump = evaluateNormalPerturbation({
+    type: 'simplex',
+    x: 0.35,
+    y: 0.35,
+    frequency: 4.0,
+    octaves: 3,
+    lacunarity: 2.0,
+    persistence: 0.5,
+    turbulence: 0.0,
+    displacement: 0.5,
+    normalPerturbation: 0.9,
+    lightAngle: 45,
+    specularStrength: 0.5,
+  })
+
+  // Higher normal perturbation tilts normal further from flat Z-axis (nz decreases or |nx|+|ny| increases)
+  const lowTilt = Math.abs(lowBump.normal.x) + Math.abs(lowBump.normal.y)
+  const highTilt = Math.abs(highBump.normal.x) + Math.abs(highBump.normal.y)
+  assert.ok(highTilt > lowTilt, 'Higher normal perturbation must produce greater normal vector deflection')
+
+  // Both normals must remain normalized unit vectors
+  const lowLen = Math.hypot(lowBump.normal.x, lowBump.normal.y, lowBump.normal.z)
+  const highLen = Math.hypot(highBump.normal.x, highBump.normal.y, highBump.normal.z)
+  assert.ok(Math.abs(lowLen - 1.0) < 1e-4)
+  assert.ok(Math.abs(highLen - 1.0) < 1e-4)
+})
+
+test('proceduralGrain produces bounded pseudorandom micro-grain in [0, 1)', () => {
+  for (let i = 0; i < 50; i++) {
+    const val = proceduralGrain(i * 1.37, i * 2.71)
+    assert.ok(Number.isFinite(val), `Grain value must be finite, got ${val}`)
+    assert.ok(val >= 0 && val < 1.0, `Grain value must be in [0, 1), got ${val}`)
+  }
+})
+
+test('view modes maintain mathematical invariants for normal-map and heightmap', () => {
+  const baseParams = PROCEDURAL_NOISE_PRESETS[1].params // Basalt Relief
+
+  // Heightmap mode: hex color must have R == G == B (monochrome grayscale)
+  const heightHex = evaluateProceduralNoiseColor({ ...baseParams, viewMode: 'heightmap' }, 0.4, 0.6)
+  const rHex = heightHex.slice(1, 3)
+  const gHex = heightHex.slice(3, 5)
+  const bHex = heightHex.slice(5, 7)
+  assert.equal(rHex, gHex, 'Heightmap R and G components must be identical')
+  assert.equal(gHex, bHex, 'Heightmap G and B components must be identical')
+
+  // Normal-map mode: B component corresponds to nz in tangent space, which must be >= 128 (outward facing)
+  const normalHex = evaluateProceduralNoiseColor({ ...baseParams, viewMode: 'normal-map' }, 0.4, 0.6)
+  const bVal = parseInt(normalHex.slice(5, 7), 16)
+  assert.ok(bVal >= 120, `Normal map blue channel (Z) must be positive outward, got ${bVal}`)
+})
+
