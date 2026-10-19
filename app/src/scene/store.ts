@@ -3330,6 +3330,10 @@ export class SceneStore {
   }
 
   toggleBooleanOperandMute(id: string, operandId: string): void {
+    this.toggleBooleanOperandMuted(id, operandId)
+  }
+
+  toggleBooleanOperandMuted(id: string, operandId: string): void {
     const node = this.requireCompound(id)
     const toggleIn = (compound: BooleanCompound): { found: boolean; compound: BooleanCompound } => {
       const hasDirect = compound.operands.some(op => op.id === operandId)
@@ -3498,6 +3502,10 @@ export class SceneStore {
       ...remaining.slice(firstIdx),
     ]
     this.refreshCompound(node, { ...node.boolean, operands: nextOperands }, `Group operands into nested ${operation}`)
+  }
+
+  extractBooleanOperand(id: string, operandId: string): void {
+    this.releaseBooleanOperand(id, operandId)
   }
 
   releaseBooleanOperand(id: string, operandId: string): void {
