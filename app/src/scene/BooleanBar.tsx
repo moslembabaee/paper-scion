@@ -8,8 +8,10 @@ import {
   Download,
   Eye,
   EyeOff,
+  GitBranch,
   Layers,
   PenTool,
+  RotateCcw,
   Scissors,
   Trash2,
   Unlink,
@@ -17,6 +19,7 @@ import {
 import type { BooleanOperation, PathElement, VectorElement } from './types'
 import { vectorPathData } from './booleanGeometry'
 import { parsePath, pathBounds } from './pathGeometry'
+import { buildShapeTree, flattenShapeTree } from './shapeTree'
 import { unionBounds } from '../canvas/math'
 import { downloadFile } from '../io/project'
 import {
@@ -91,11 +94,13 @@ function BooleanIcon({ operation }: { operation: BooleanOperation }) {
 function CompoundPreview({
   compound,
   highlightedId,
+  store,
 }: {
   compound: PathElement
   highlightedId: string | null
+  store?: SceneStore
 }) {
-  const [viewMode, setViewMode] = useState<'visual' | 'code' | 'clip'>('visual')
+  const [viewMode, setViewMode] = useState<'visual' | 'tree' | 'code' | 'clip'>('visual')
   const [copied, setCopied] = useState<string | null>(null)
 
   const sources = useMemo(
@@ -179,6 +184,17 @@ function CompoundPreview({
           >
             <Eye size={10} style={{ display: 'inline', marginRight: 3, verticalAlign: -1 }} />
             PREVIEW
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={viewMode === 'tree'}
+            className={`cag-tab-btn ${viewMode === 'tree' ? 'active' : ''}`}
+            onClick={() => setViewMode('tree')}
+            title="Reversible Shape Tree Hierarchy"
+          >
+            <GitBranch size={10} style={{ display: 'inline', marginRight: 3, verticalAlign: -1 }} />
+            TREE
           </button>
           <button
             type="button"
@@ -270,6 +286,58 @@ function CompoundPreview({
             <span>SVG / {compound.boolean!.operands.length} SOURCES</span>
           </figcaption>
         </figure>
+      ) : viewMode === 'tree' ? (
+        <div className="cag-tree-view" tabIndex={0} aria-label="Reversible Shape Tree Hierarchy">
+          <div className="shape-tree-list">
+            {flattenShapeTree(buildShapeTree(compound)).map(node => (
+              <div
+                key={node.id}
+                className={`shape-tree-node depth-${node.depth} ${node.id === highlightedId ? 'is-highlighted' : ''}`}
+                style={{ paddingLeft: `${node.depth * 14 + 8}px` }}
+              >
+                <span className="shape-tree-type-badge">{node.type}</span>
+                <span className="shape-tree-name">{node.name}</span>
+                {node.operation && (
+                  <span className={`shape-tree-op-badge is-${node.operation}`}>
+                    {node.operation}
+                  </span>
+                )}
+                <div className="shape-tree-actions">
+                  {node.type === 'compound' && store && (
+                    <button
+                      type="button"
+                      className="shape-tree-btn"
+                      title="Invert operation"
+                      onClick={() => store.invertBooleanOperation(compound.id, node.id)}
+                    >
+                      <RotateCcw size={9} />
+                    </button>
+                  )}
+                  {node.type === 'compound' && node.id !== compound.id && store && (
+                    <button
+                      type="button"
+                      className="shape-tree-btn"
+                      title="Dissolve group into parent"
+                      onClick={() => store.dissolveCompound(compound.id, node.id)}
+                    >
+                      <Unlink size={9} />
+                    </button>
+                  )}
+                  {node.type !== 'compound' && store && (
+                    <button
+                      type="button"
+                      className={`shape-tree-btn ${node.muted ? 'is-muted' : ''}`}
+                      title={node.muted ? 'Unmute shape' : 'Mute shape'}
+                      onClick={() => store.toggleBooleanOperandMute(compound.id, node.id)}
+                    >
+                      {node.muted ? <EyeOff size={9} /> : <Eye size={9} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : viewMode === 'clip' ? (
         <pre className="cag-code-view" tabIndex={0} aria-label="SVG ClipPath Definition">
           <code>{clipMarkup}</code>
@@ -763,7 +831,7 @@ export function BooleanBar({ store }: { store: SceneStore }) {
 
       {compound ? (
         <>
-          <CompoundPreview compound={compound} highlightedId={highlightedId} />
+          <CompoundPreview compound={compound} highlightedId={highlightedId} store={store} />
           <p className="boolean-hint">
             {reason ??
               `${ACTIONS.find(action => action.operation === compound.boolean!.operation)!.hint}. Sources remain editable.`}
@@ -842,10 +910,39 @@ export function BooleanBar({ store }: { store: SceneStore }) {
             >
               Flatten path
             </button>
+            <button
+              disabled={disabled}
+              title="Invert the boolean operation (e.g. Union <-> Exclude, or swap base/cutter for Subtract)"
+              onClick={() => run(() => store.invertBooleanOperation(compound.id))}
+            >
+              Invert op
+            </button>
+            <button
+              disabled={disabled}
+              title="Revert all nested compound operations back to original independent leaf shapes"
+              onClick={() => run(() => store.revertCompound(compound.id))}
+            >
+              Revert tree
+            </button>
           </div>
 
           {!compound.d && (
             <p className="boolean-hint">The result is empty. Edit a source or change the operation.</p>
+          )}
+
+          {selected && (selected.style.stroke?.width ?? 0) > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="boolean-source-btn"
+                style={{ width: '100%', justifyContent: 'center', padding: '6px 8px' }}
+                title="Expand stroke into a filled outline vector path"
+                onClick={() => run(() => store.expandOutline(selected.id))}
+              >
+                <PenTool size={11} />
+                <span>Expand Stroke Outline</span>
+              </button>
+            </div>
           )}
         </>
       ) : (
@@ -866,6 +963,20 @@ export function BooleanBar({ store }: { store: SceneStore }) {
                 ? 'Replace selected shapes with a single vector path.'
                 : 'Keep source shapes editable inside a compound.')}
           </p>
+          {selected && !compound && (selected.style.stroke?.width ?? 0) > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="boolean-source-btn"
+                style={{ width: '100%', justifyContent: 'center', padding: '6px 8px' }}
+                title="Expand stroke into a filled outline vector path"
+                onClick={() => run(() => store.expandOutline(selected.id))}
+              >
+                <PenTool size={11} />
+                <span>Expand Stroke Outline</span>
+              </button>
+            </div>
+          )}
         </>
       )}
 

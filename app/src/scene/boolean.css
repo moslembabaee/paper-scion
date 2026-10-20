@@ -79,6 +79,23 @@
 .cag-code-view { padding: 10px; background: #111111; font: 9px var(--font-mono); color: #edebe1; max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 .cag-code-view code { color: #81adec; }
 
+/* Reversible Shape Tree View */
+.cag-tree-view { padding: 6px 4px; background: #161616; max-height: 160px; overflow-y: auto; font: 9px var(--font-mono); }
+.shape-tree-list { display: flex; flex-direction: column; gap: 2px; }
+.shape-tree-node { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 3px; color: #edebe1; background: transparent; transition: background 120ms ease; }
+.shape-tree-node:hover, .shape-tree-node.is-highlighted { background: #edebe118; }
+.shape-tree-type-badge { font-size: 7px; color: #edebe188; padding: 1px 3px; border-radius: 2px; background: #edebe110; text-transform: uppercase; }
+.shape-tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.shape-tree-op-badge { font-size: 7px; font-weight: 500; padding: 1px 4px; border-radius: 2px; text-transform: uppercase; }
+.shape-tree-op-badge.is-union { color: #81adec; background: #81adec20; }
+.shape-tree-op-badge.is-subtract { color: #f87171; background: #f8717120; }
+.shape-tree-op-badge.is-intersect { color: #34d399; background: #34d39920; }
+.shape-tree-op-badge.is-exclude { color: #fbbf24; background: #fbbf2420; }
+.shape-tree-actions { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+.shape-tree-btn { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border: 1px solid var(--paper-border); border-radius: 3px; background: var(--paper-surface); color: var(--paper-text-secondary); cursor: pointer; }
+.shape-tree-btn:hover { background: var(--paper-accent-soft); color: var(--paper-accent-text); border-color: var(--paper-accent); }
+.shape-tree-btn.is-muted { color: var(--paper-text-muted); opacity: 0.5; }
+
 .boolean-source-order { display: flex; align-items: center; gap: 4px; padding-bottom: 10px; }
 .boolean-source-order > span { margin-right: auto; font: 9px var(--font-mono); color: var(--paper-text-muted); }
 .boolean-source-order button { display: grid; place-items: center; width: 25px; height: 24px; border: 1px solid var(--paper-border); border-radius: 3px; background: var(--paper-surface); color: var(--paper-text-secondary); cursor: pointer; }

@@ -2,6 +2,7 @@ import type { Point, Bounds } from '../canvas/types.ts'
 import { parsePath } from './pathGeometry.ts'
 import type { PathContour } from './pathGeometry.ts'
 import type { BooleanCompound, BooleanOperation, PathElement, SceneElement, VectorElement } from './types.ts'
+import { expandPathOutline } from './outlineExpansion.ts'
 
 export const BOOLEAN_OPERATIONS = ['union', 'subtract', 'intersect', 'exclude'] as const
 export const isVector = (node: SceneElement): node is VectorElement => ['rectangle', 'ellipse', 'path'].includes(node.type)
@@ -53,7 +54,7 @@ function contoursToCurves(contours: readonly PathContour[]): Curve[] {
 /** SVG fill geometry, including implicit closure of open contours and center rotation. */
 function shapeFor(node: VectorElement): Shape {
   let curves: Curve[]
-  if (node.type === 'path') curves = contoursToCurves(parsePath(node.d))
+  if (node.type === 'path') curves = contoursToCurves(vectorToContours(node))
   else {
     const inset = Math.min(node.style.stroke?.width ? node.style.stroke.width / 2 : 0, node.width / 2, node.height / 2)
     const w = node.width - 2 * inset, h = node.height - 2 * inset
@@ -330,17 +331,23 @@ export function findCompoundOperand(compound: BooleanCompound, operandId: string
   return undefined
 }
 
+export interface ComputeBooleanOptions {
+  fillRule?: 'nonzero' | 'evenodd'
+  expandStrokes?: boolean
+}
+
 /**
  * Evaluates a single vector operand to a BooleanResult contour without combining.
  * Useful when only one operand is active (e.g. other operands are muted).
  */
-export function evaluateSingleOperand(node: VectorElement): BooleanResult {
+export function evaluateSingleOperand(node: VectorElement, options?: ComputeBooleanOptions): BooleanResult {
   const evaluated = node.type === 'path' && node.boolean ? evaluateVectorElement(node) : node
   const shape = shapeFor(evaluated)
   const d = sourcePathData(shape.curves)
   const raw = boundsOf(shape.curves, true)
   const bounds = { ...raw, width: Math.max(0.01, raw.width), height: Math.max(0.01, raw.height) }
-  return { d, bounds, viewBox: [bounds.x, bounds.y, bounds.width, bounds.height], fillRule: shape.fillRule }
+  const fillRule = options?.fillRule ?? shape.fillRule
+  return { d, bounds, viewBox: [bounds.x, bounds.y, bounds.width, bounds.height], fillRule }
 }
 
 /**
@@ -373,20 +380,43 @@ export function evaluateVectorElement(node: VectorElement, depth = 0): VectorEle
 /**
  * Live evaluation of compound shape hierarchy down to root result.
  */
-export function evaluateCompoundHierarchy(compound: BooleanCompound): BooleanResult {
+export function evaluateCompoundHierarchy(compound: BooleanCompound, options?: ComputeBooleanOptions): BooleanResult {
   const muted = new Set(compound.mutedOperandIds ?? [])
   const activeOperands = compound.operands.filter(op => !muted.has(op.id))
   const operandsToEvaluate = activeOperands.length >= 1 ? activeOperands : compound.operands
   const evaluatedOperands = operandsToEvaluate.map(op => evaluateVectorElement(op))
   return evaluatedOperands.length === 1
-    ? evaluateSingleOperand(evaluatedOperands[0])
-    : computeBoolean(evaluatedOperands, compound.operation)
+    ? evaluateSingleOperand(evaluatedOperands[0], options)
+    : computeBoolean(evaluatedOperands, compound.operation, options)
 }
 
 /** Preserve cubic segments and holes; only intersection parameters are numerical. */
-export function computeBoolean(operands: readonly VectorElement[], operation: BooleanOperation): BooleanResult {
+export function computeBoolean(
+  operands: readonly VectorElement[],
+  operation: BooleanOperation,
+  options?: ComputeBooleanOptions
+): BooleanResult {
   if (!BOOLEAN_OPERATIONS.includes(operation) || operands.length < 2) throw new Error('Choose a boolean operation and at least two vector shapes.')
-  const evaluatedOperands = operands.map(op => op.type === 'path' && op.boolean ? evaluateVectorElement(op) : op)
+  let processedOperands = operands
+  if (options?.expandStrokes) {
+    processedOperands = operands.map(op => {
+      if (op.style.stroke?.width && (!op.style.fill || op.style.fill === null)) {
+        if (op.type === 'path') {
+          const expanded = expandPathOutline(op.d, { strokeWidth: op.style.stroke.width })
+          return {
+            ...op,
+            d: expanded.d,
+            viewBox: expanded.viewBox,
+            width: expanded.bounds.width,
+            height: expanded.bounds.height,
+            style: { ...op.style, fill: op.style.stroke.color, stroke: null },
+          }
+        }
+      }
+      return op
+    })
+  }
+  const evaluatedOperands = processedOperands.map(op => op.type === 'path' && op.boolean ? evaluateVectorElement(op) : op)
   const shapes = evaluatedOperands.map(shapeFor)
   if (shapes.reduce((count, shape) => count + shape.curves.length, 0) > 2000) throw new Error('These paths have too many segments. Simplify them and try again.')
   // Split loops and extrema before intersection search, so every collinear
@@ -418,7 +448,8 @@ export function computeBoolean(operands: readonly VectorElement[], operation: Bo
   })
   const raw = boundsOf(kept.length ? kept : curves, true)
   const bounds = { ...raw, width: Math.max(.01, raw.width), height: Math.max(.01, raw.height) }
-  return { d: serializeCurves(kept), bounds, viewBox: [bounds.x, bounds.y, bounds.width, bounds.height], fillRule: 'nonzero' }
+  const fillRule = options?.fillRule ?? (operands.some(op => op.type === 'path' && op.fillRule === 'evenodd') ? 'evenodd' : 'nonzero')
+  return { d: serializeCurves(kept), bounds, viewBox: [bounds.x, bounds.y, bounds.width, bounds.height], fillRule }
 }
 
 /** Recompute source geometry without changing its existing mapping into the scene. */

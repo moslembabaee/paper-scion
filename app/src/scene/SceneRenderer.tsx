@@ -2,7 +2,7 @@ import { effectFilterMarkup } from '../tokens/effects'
 import { memo, useId, useMemo, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import type { SceneStore } from './store'
-import type { SceneElement } from './types'
+import type { BooleanOperation, SceneElement } from './types'
 import { useScene } from './useScene'
 import { ShapeShader } from '../shaders/ShapeShader'
 import { frameMask, maskPathData, maskFillRule, isVectorMask, isAlphaMask, isLuminanceMask, isMaskInverted, isMaskIsolated } from './maskGeometry'
@@ -17,13 +17,25 @@ import './scene.css'
 
 interface NodeProps { store: SceneStore; id: string; interactive: boolean; inheritedLocked?: boolean; presentationRoot?: boolean; presentation?: boolean }
 
+const BOOLEAN_OP_SYMBOLS: Record<BooleanOperation, { symbol: string; label: string }> = {
+  union: { symbol: '∪', label: 'Union' },
+  subtract: { symbol: '∖', label: 'Subtract' },
+  intersect: { symbol: '∩', label: 'Intersect' },
+  exclude: { symbol: '⊕', label: 'Exclude' },
+}
+
 /** Render in the operands' parent space so nested frame transforms and masks apply. */
 function BooleanCanvasPreview({ store, parentId }: { store: SceneStore; parentId: string | null }) {
   const read = () => { const preview = store.getBooleanPreview(); return preview?.node.parentId === parentId ? preview : null }
   const preview = useSyncExternalStore(store.subscribeBooleanPreview, read, read)
   if (!preview) return null
   const { node, operation } = preview
+  const opInfo = BOOLEAN_OP_SYMBOLS[operation]
   return <div className="boolean-canvas-preview" data-testid="boolean-canvas-preview" data-operation={operation} style={{ left: node.x, top: node.y, width: node.width, height: node.height, transform: `rotate(${node.rotation}deg)` }} aria-hidden="true">
+    <div className="boolean-preview-indicator-badge" data-testid="boolean-preview-badge">
+      <span className="indicator-symbol">{opInfo.symbol}</span>
+      <span>{opInfo.label} Preview</span>
+    </div>
     <svg viewBox={node.viewBox.join(' ')} preserveAspectRatio="none"><path d={node.d} fillRule={node.fillRule} vectorEffect="non-scaling-stroke" /></svg>
   </div>
 }
