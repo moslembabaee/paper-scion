@@ -204,7 +204,7 @@ export function MaterialPresetInspector({
 
       {/* Refraction Index with common IOR chips */}
       <SliderRow
-        label="Refraction Index (η)"
+        label="Refractive Index (η)"
         value={params.refractionIndex}
         min={1.0}
         max={2.8}
@@ -217,16 +217,16 @@ export function MaterialPresetInspector({
             key={item.label}
             className={`ior-chip ${Math.abs(params.refractionIndex - item.val) < 0.02 ? 'active' : ''}`}
             onClick={() => update({ refractionIndex: item.val })}
-            title={`Set refraction index to ${item.val} (${item.label})`}
+            title={`Set refractive index to ${item.val} (${item.label})`}
           >
             {item.label} {item.val}
           </button>
         ))}
       </div>
 
-      {/* Dispersion Spread (Cauchy spectral splitting) */}
+      {/* Dispersion Spread / Color Aberration (Cauchy spectral splitting) */}
       <SliderRow
-        label="Dispersion Spread (Cauchy)"
+        label="Color Aberration / Dispersion"
         value={params.dispersionSpread}
         min={0.0}
         max={1.0}
@@ -236,7 +236,7 @@ export function MaterialPresetInspector({
 
       {/* Wave / Spatial Frequency */}
       <SliderRow
-        label="Spatial Frequency"
+        label="Wave Frequency"
         value={params.frequency}
         min={0.1}
         max={20.0}
@@ -256,7 +256,7 @@ export function MaterialPresetInspector({
 
       {/* Microfacet Roughness / Frost */}
       <SliderRow
-        label="Microfacet Roughness / Frost"
+        label="Surface Roughness / Frost"
         value={params.roughness}
         min={0.0}
         max={1.0}

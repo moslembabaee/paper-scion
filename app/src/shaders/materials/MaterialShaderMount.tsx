@@ -58,6 +58,13 @@ export function MaterialShaderMount({ paint, common, paused = false }: MaterialS
 
   const uniforms = materialUniforms(paint)
 
+  useEffect(() => {
+    const mount = elementRef.current?.paperShaderMount
+    if (mount) {
+      mount.setUniforms(uniforms)
+    }
+  }, [uniforms])
+
   return (
     <div
       ref={containerRef}

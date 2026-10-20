@@ -131,6 +131,32 @@ vec3 sampleStudioReflection(vec3 R) {
   return sky;
 }
 
+// Procedural Backdrop scene (high-craft Paper design system aesthetic)
+vec3 sampleBackdropScene(vec2 uv) {
+  vec3 cream = vec3(0.929, 0.922, 0.882);
+  vec3 blue = vec3(0.506, 0.678, 0.925);
+  vec3 slate = vec3(0.318, 0.420, 0.580);
+  vec3 charcoal = vec3(0.133, 0.133, 0.133);
+  vec3 black = vec3(0.031, 0.031, 0.031);
+
+  vec2 gridUV = fract(uv * 6.0);
+  float gridLines = smoothstep(0.04, 0.0, gridUV.x) + smoothstep(0.04, 0.0, gridUV.y);
+
+  float cardDist = length(uv - vec2(0.35, 0.45));
+  float cardGlow = smoothstep(0.5, 0.0, cardDist);
+
+  float diag = uv.x * 0.6 + uv.y * 0.4;
+  vec3 bg = mix(cream, charcoal, smoothstep(0.1, 0.9, diag));
+  bg = mix(bg, blue, cardGlow * 0.65);
+  bg = mix(bg, slate, smoothstep(0.7, 0.1, length(uv - vec2(0.75, 0.8))) * 0.5);
+
+  float stripe = step(0.48, fract(uv.x * 3.0 + uv.y * 2.0));
+  bg = mix(bg, black, stripe * 0.15);
+  bg = mix(bg, blue, gridLines * 0.12);
+
+  return bg;
+}
+
 // Surface elevation calculation depending on preset mode and mouse
 float sampleSurfaceElevation(vec2 p, float time, vec2 mouseDeflect) {
   vec2 pos = p + mouseDeflect;
@@ -266,6 +292,31 @@ void main() {
     samplePalette(coordB).b
   );
 
+  // ==================== REAL-TIME BACKDROP BLUR & CAUCHY DISPERSION ====================
+  float backdropBlurRadius = u_roughness * 0.05 + 0.005;
+  vec3 accumulatedBackdrop = vec3(0.0);
+  float totalBackdropWeight = 0.0;
+  const int BLUR_TAPS = 12;
+  for (int i = 0; i < BLUR_TAPS; i++) {
+    float fi = float(i);
+    float angle = fi * 2.39996323; // Golden angle
+    float r = sqrt((fi + 1.0) / float(BLUR_TAPS)) * backdropBlurRadius;
+    vec2 tap = vec2(cos(angle), sin(angle)) * r;
+    float w = exp(-2.2 * (r / max(0.001, backdropBlurRadius)) * (r / max(0.001, backdropBlurRadius)));
+
+    vec2 offsetR = refrR.xy * dispOffset * 2.0;
+    vec2 offsetG = refrG.xy * dispOffset * 2.0;
+    vec2 offsetB = refrB.xy * dispOffset * 2.0;
+
+    float sR = sampleBackdropScene(uv + offsetR + tap).r;
+    float sG = sampleBackdropScene(uv + offsetG + tap).g;
+    float sB = sampleBackdropScene(uv + offsetB + tap).b;
+
+    accumulatedBackdrop += vec3(sR, sG, sB) * w;
+    totalBackdropWeight += w;
+  }
+  vec3 backdropColor = accumulatedBackdrop / max(0.0001, totalBackdropWeight);
+
   // ==================== THIN-FILM IRIDESCENT OPTICS ====================
   vec3 iridColor = calculateThinFilmInterference(cosTheta, u_filmThickness, ior);
 
@@ -286,7 +337,8 @@ void main() {
   float specGlint = pow(NdotH, specPower) * u_specularStrength * 1.5;
 
   // ==================== LAYER COMPOSITING & TINT ABSORPTION ====================
-  vec3 baseColor = mix(dispColor, u_tintColor, 0.35);
+  vec3 mixedMaterial = mix(dispColor, backdropColor, 0.45 * (1.0 - u_blendRatio * 0.4));
+  vec3 baseColor = mix(mixedMaterial, u_tintColor, 0.35);
   vec3 surfaceColor = mix(baseColor, iridColor * envRefl * 1.25, u_iridescence);
 
   // Blend with Fresnel reflection
