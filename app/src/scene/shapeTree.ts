@@ -1,5 +1,6 @@
-import type { BooleanOperation, PathElement, VectorElement } from './types.ts'
-import { computeBoolean } from './booleanGeometry.ts'
+import type { BooleanCompound, BooleanOperation, PathElement, VectorElement } from './types.ts'
+import { computeBoolean, transformedSource } from './booleanGeometry.ts'
+import { createElement } from './elements.ts'
 
 export type ShapeTreeNodeType = 'rectangle' | 'ellipse' | 'path' | 'polygon' | 'compound'
 
@@ -15,13 +16,22 @@ export interface ShapeTreeNode {
   readonly depth: number
 }
 
+function isPolygonPath(d: string): boolean {
+  if (!d || !d.trim()) return false
+  return !/[CcSsQqTtAa]/.test(d)
+}
+
 /**
  * Builds a hierarchical ShapeTreeNode representation from a VectorElement.
  */
 export function buildShapeTree(node: VectorElement, depth = 0): ShapeTreeNode {
   if (node.type === 'path' && node.boolean) {
     const compound = node.boolean
-    const operands = compound.operands.map(op => buildShapeTree(op, depth + 1))
+    const mutedSet = new Set(compound.mutedOperandIds ?? [])
+    const operands = compound.operands.map(op => {
+      const childTree = buildShapeTree(op, depth + 1)
+      return mutedSet.has(op.id) ? { ...childTree, muted: true } : childTree
+    })
     return {
       id: node.id,
       name: node.name,
@@ -34,10 +44,13 @@ export function buildShapeTree(node: VectorElement, depth = 0): ShapeTreeNode {
     }
   }
 
+  const detectedType: ShapeTreeNodeType =
+    node.type === 'path' && isPolygonPath(node.d) ? 'polygon' : node.type
+
   return {
     id: node.id,
     name: node.name,
-    type: node.type,
+    type: detectedType,
     element: node,
     muted: false,
     depth,
@@ -251,5 +264,190 @@ export function evaluateShapeTree(tree: ShapeTreeNode): VectorElement {
       operation,
       operands: evaluatedChildren,
     },
+  }
+}
+
+/**
+ * Converts a compound ShapeTreeNode into a serializable BooleanCompound representation.
+ */
+export function shapeTreeToCompound(tree: ShapeTreeNode): BooleanCompound {
+  if (tree.type !== 'compound' || !tree.operands) {
+    throw new Error('Node is not a compound shape')
+  }
+
+  const operands: VectorElement[] = []
+  const mutedOperandIds: string[] = []
+
+  for (const child of tree.operands) {
+    if (child.muted) {
+      mutedOperandIds.push(child.id)
+    }
+    operands.push(shapeTreeToVectorElement(child))
+  }
+
+  return {
+    operation: tree.operation ?? 'union',
+    operands,
+    ...(mutedOperandIds.length > 0 ? { mutedOperandIds } : {}),
+  }
+}
+
+/**
+ * Converts any ShapeTreeNode back into an evaluated VectorElement.
+ */
+export function shapeTreeToVectorElement(tree: ShapeTreeNode): VectorElement {
+  if (tree.type !== 'compound' || !tree.operands || tree.operands.length === 0) {
+    return tree.element!
+  }
+
+  const compound = shapeTreeToCompound(tree)
+  const base = tree.element as PathElement
+
+  const muted = new Set(compound.mutedOperandIds ?? [])
+  const activeOperands = compound.operands.filter(op => !muted.has(op.id))
+  const operandsToEvaluate = activeOperands.length >= 1 ? activeOperands : compound.operands
+
+  const result = operandsToEvaluate.length === 1
+    ? {
+        d: (operandsToEvaluate[0] as PathElement).d,
+        viewBox: (operandsToEvaluate[0] as PathElement).viewBox,
+        bounds: { x: operandsToEvaluate[0].x, y: operandsToEvaluate[0].y, width: operandsToEvaluate[0].width, height: operandsToEvaluate[0].height },
+        fillRule: (operandsToEvaluate[0] as PathElement).fillRule ?? 'nonzero',
+      }
+    : computeBoolean(operandsToEvaluate, compound.operation)
+
+  return {
+    ...base,
+    ...result.bounds,
+    d: result.d,
+    viewBox: result.viewBox,
+    fillRule: result.fillRule,
+    boolean: compound,
+  }
+}
+
+/**
+ * Reverts a shape tree hierarchy completely into a flat list of independent leaf vector elements.
+ * If compoundElement is supplied, sources are transformed through the compound's viewBox mapping.
+ */
+export function revertShapeTreeToElements(
+  tree: ShapeTreeNode,
+  compoundElement?: PathElement
+): VectorElement[] {
+  const leaves: VectorElement[] = []
+
+  function collect(node: ShapeTreeNode) {
+    if (node.type === 'compound' && node.operands && node.operands.length > 0) {
+      for (const child of node.operands) {
+        collect(child)
+      }
+    } else if (node.element) {
+      if (compoundElement) {
+        const transformed = transformedSource(node.element, compoundElement)
+        const restored = createElement('path', {
+          id: node.element.id,
+          name: node.element.name,
+          parentId: compoundElement.parentId,
+          ...transformed.bounds,
+          d: transformed.d,
+          viewBox: transformed.viewBox,
+          fillRule: node.element.type === 'path' ? node.element.fillRule : 'nonzero',
+          style: node.element.style,
+        })
+        leaves.push(restored)
+      } else {
+        leaves.push(node.element)
+      }
+    }
+  }
+
+  collect(tree)
+  return leaves
+}
+
+/**
+ * Flattens a shape tree into a linear depth-first array for rendering hierarchy lists and rows.
+ */
+export function flattenShapeTree(root: ShapeTreeNode): readonly ShapeTreeNode[] {
+  const list: ShapeTreeNode[] = []
+  function traverse(node: ShapeTreeNode) {
+    list.push(node)
+    if (node.operands) {
+      for (const child of node.operands) {
+        traverse(child)
+      }
+    }
+  }
+  traverse(root)
+  return list
+}
+
+/**
+ * Groups specified sibling nodes inside a parent compound into a new nested compound node.
+ */
+export function nestShapeTreeNodes(
+  root: ShapeTreeNode,
+  parentCompoundId: string,
+  nodeIds: readonly string[],
+  operation: BooleanOperation = 'union'
+): ShapeTreeNode {
+  return updateTreeNode(root, parentCompoundId, node => {
+    if (node.type !== 'compound' || !node.operands) return node
+    const targetSet = new Set(nodeIds)
+    const selectedChildren = node.operands.filter(c => targetSet.has(c.id))
+    if (selectedChildren.length < 2) return node
+
+    const firstIndex = node.operands.findIndex(c => targetSet.has(c.id))
+    const groupElement = createElement('path', {
+      name: `${operation[0].toUpperCase() + operation.slice(1)} Group`,
+      d: '',
+      viewBox: [0, 0, 100, 100],
+      fillRule: 'nonzero',
+    })
+
+    const nestedNode: ShapeTreeNode = {
+      id: crypto.randomUUID(),
+      name: `${operation[0].toUpperCase() + operation.slice(1)} Compound`,
+      type: 'compound',
+      operation,
+      operands: selectedChildren.map(c => ({ ...c, depth: node.depth + 2 })),
+      element: groupElement,
+      muted: false,
+      depth: node.depth + 1,
+    }
+
+    const nextOperands: ShapeTreeNode[] = []
+    for (let i = 0; i < node.operands.length; i++) {
+      if (i === firstIndex) {
+        nextOperands.push(nestedNode)
+      }
+      if (!targetSet.has(node.operands[i].id)) {
+        nextOperands.push(node.operands[i])
+      }
+    }
+
+    return {
+      ...node,
+      operands: nextOperands,
+    }
+  })
+}
+
+/**
+ * Deep clones a ShapeTreeNode with fresh generated IDs.
+ */
+export function cloneShapeTreeNode(
+  node: ShapeTreeNode,
+  idGenerator: () => string = () => crypto.randomUUID()
+): ShapeTreeNode {
+  const newId = idGenerator()
+  const newElement = node.element ? { ...node.element, id: newId } : undefined
+  const operands = node.operands?.map(child => cloneShapeTreeNode(child, idGenerator))
+  return {
+    ...node,
+    id: newId,
+    name: `${node.name} Copy`,
+    element: newElement,
+    operands,
   }
 }

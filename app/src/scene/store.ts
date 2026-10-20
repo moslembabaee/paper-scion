@@ -15,6 +15,8 @@ import { normalizeHierarchy } from '../collaboration/model.ts'
 import type { ShaderPaint } from '../shaders/types.ts'
 import type { BooleanCompound, BooleanOperation, ElementInput, ElementOf, ElementPatch, ElementType, MaskClipMode, PathElement, SceneDocument, SceneElement, SceneSnapshot, VectorElement } from './types.ts'
 import { computeBoolean, evaluateVectorElement, findCompoundOperand, isVector, refreshBooleanElement, transformedSource } from './booleanGeometry.ts'
+import { expandVectorOutline, type OutlineExpansionOptions } from './outlineExpansion.ts'
+import { buildShapeTree, invertNodeOperation, dissolveTreeNode, shapeTreeToCompound, revertShapeTreeToElements, type ShapeTreeNode } from './shapeTree.ts'
 import { optimizeSvgBezierData } from './bezierOptimization.ts'
 import { serializePath, copyContours, parsePath, pathBounds, type PathNodes, type PathContour } from './pathGeometry.ts'
 import { canMask, validateMaskGraph } from './maskGeometry.ts'
@@ -3702,6 +3704,68 @@ export class SceneStore {
     return released
   }
 
+  getShapeTree(id: string): ShapeTreeNode {
+    const node = this.requireCompound(id, true)
+    return buildShapeTree(node)
+  }
+
+  applyShapeTree(id: string, tree: ShapeTreeNode): void {
+    const node = this.requireCompound(id)
+    const compound = shapeTreeToCompound(tree)
+    this.refreshCompound(node, compound, 'Update shape hierarchy')
+  }
+
+  invertBooleanOperation(id: string, targetCompoundId?: string): void {
+    const node = this.requireCompound(id)
+    const currentTree = buildShapeTree(node)
+    const target = targetCompoundId ?? id
+    const updatedTree = invertNodeOperation(currentTree, target)
+    const compound = shapeTreeToCompound(updatedTree)
+    this.refreshCompound(node, compound, 'Invert boolean operation')
+  }
+
+  dissolveCompound(id: string, targetCompoundId?: string): void {
+    if (!targetCompoundId || targetCompoundId === id) {
+      this.releaseBoolean(id)
+      return
+    }
+    const node = this.requireCompound(id)
+    const currentTree = buildShapeTree(node)
+    const updatedTree = dissolveTreeNode(currentTree, targetCompoundId)
+    const compound = shapeTreeToCompound(updatedTree)
+    this.refreshCompound(node, compound, 'Dissolve compound group')
+  }
+
+  revertCompound(id: string): readonly string[] {
+    const node = this.requireCompound(id)
+    const tree = buildShapeTree(node)
+    const leaves = revertShapeTreeToElements(tree, node)
+
+    const elements = { ...this.state.elements }
+    const releasedIds: string[] = []
+
+    for (const leaf of leaves) {
+      const sourceId = Object.hasOwn(elements, leaf.id) ? crypto.randomUUID() : leaf.id
+      const restored = { ...leaf, id: sourceId, parentId: node.parentId }
+      validateElement(restored)
+      elements[sourceId] = freezeElement(restored)
+      releasedIds.push(sourceId)
+    }
+
+    delete elements[id]
+    const siblings = [...this.getChildren(node.parentId)]
+    const idx = siblings.indexOf(id)
+    if (idx !== -1) {
+      siblings.splice(idx, 1, ...releasedIds)
+    } else {
+      siblings.push(...releasedIds)
+    }
+
+    this.ordered(elements, node.parentId, siblings)
+    this.commit(elements, node.parentId === null ? siblings : this.state.rootIds, releasedIds, 'Revert compound to original shapes')
+    return releasedIds
+  }
+
   /**
    * Splits a multi-subpath vector path element into individual PathElement layers in the scene graph.
    * Preserves styles, transforms, parent relationships, and exact geometry.
@@ -3754,6 +3818,58 @@ export class SceneStore {
     }, `Split path into ${contours.length} layers`)
 
     return newIds
+  }
+
+  /**
+   * Expands the stroke of a vector element into a filled outline PathElement.
+   */
+  expandOutline(id: string, options?: Partial<OutlineExpansionOptions>): PathElement {
+    const node = this.require(id)
+    if (!isVector(node)) throw new Error('Select a rectangle, ellipse, or path to expand its stroke outline')
+    if (this.isLocked(id)) throw new Error('Element is locked')
+    if (this.history.getSnapshot().active) throw new Error('Finish the active edit first')
+
+    const expanded = expandVectorOutline(node, options)
+    validateElement(expanded)
+
+    const elements = { ...this.state.elements, [expanded.id]: freezeElement(expanded) }
+    delete elements[id]
+
+    const siblings = [...this.getChildren(node.parentId)]
+    const idx = siblings.indexOf(id)
+    if (idx !== -1) {
+      siblings.splice(idx, 1, expanded.id)
+    } else {
+      siblings.push(expanded.id)
+    }
+
+    this.ordered(elements, node.parentId, siblings)
+    this.commit(
+      elements,
+      node.parentId === null ? siblings : this.state.rootIds,
+      [expanded.id],
+      'Expand stroke outline'
+    )
+    return elements[expanded.id] as PathElement
+  }
+
+  /**
+   * Expands the stroke outline for all selected vector elements.
+   */
+  expandOutlineSelection(options?: Partial<OutlineExpansionOptions>, ids = this.state.selection): readonly PathElement[] {
+    const validIds = ids.filter(id => {
+      const el = this.state.elements[id]
+      return el && isVector(el) && !this.isLocked(id)
+    })
+    if (validIds.length === 0) return []
+
+    const expandedElements: PathElement[] = []
+    this.batch(() => {
+      for (const id of validIds) {
+        expandedElements.push(this.expandOutline(id, options))
+      }
+    }, 'Expand stroke outlines')
+    return expandedElements
   }
 
   addToken(input: TokenInput): DesignToken {
