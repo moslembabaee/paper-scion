@@ -106,7 +106,10 @@ export function exportToTailwindV4(tokens: readonly DesignToken[], library: Styl
         sections.push(`  /* Mode: ${theme.name} */`)
         sections.push(`  ${selector} {`)
         for (const t of overridden) {
-          sections.push(`    ${tokenVariable(t)}: ${tokenCSSValue(t)};`)
+          const themeAliasId = t.themeAliases?.[theme.id]
+          const targetToken = themeAliasId ? tokenMap.get(themeAliasId) : undefined
+          const valStr = targetToken ? `var(${tokenVariable(targetToken)})` : tokenCSSValue(t)
+          sections.push(`    ${tokenVariable(t)}: ${valStr};`)
         }
         sections.push('  }\n')
       }
@@ -228,10 +231,19 @@ export function exportToCSSVariables(tokens: readonly DesignToken[], library: St
 
     if (overridden.length > 0) {
       const themeSlug = theme.id.toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+      const selector = themeSlug === 'dark'
+        ? '[data-theme="dark"], [data-paper-theme="dark"], .dark'
+        : themeSlug === 'high-contrast'
+          ? '[data-theme="high-contrast"], [data-paper-theme="high-contrast"], .high-contrast'
+          : `[data-theme="${themeSlug}"], [data-paper-theme="${themeSlug}"], .theme-${themeSlug}`
+
       lines.push(`/* Mode: ${theme.name} */`)
-      lines.push(`[data-theme="${themeSlug}"], [data-paper-theme="${themeSlug}"], .theme-${themeSlug} {`)
+      lines.push(`${selector} {`)
       for (const t of overridden) {
-        lines.push(`  ${tokenVariable(t)}: ${tokenCSSValue(t)};`)
+        const themeAliasId = t.themeAliases?.[theme.id]
+        const targetToken = themeAliasId ? tokenMap.get(themeAliasId) : undefined
+        const valStr = targetToken ? `var(${tokenVariable(targetToken)})` : tokenCSSValue(t)
+        lines.push(`  ${tokenVariable(t)}: ${valStr};`)
       }
       lines.push('}\n')
     }
@@ -478,10 +490,10 @@ export function importTokensFromCode(
 
   const existingThemes = new Map(snapshot.styleLibrary.themes.map(t => [t.id.toLowerCase(), t.id]))
 
-  const ensureTheme = (themeName: string): string => {
-    const slug = themeName.toLowerCase().replace(/[^a-z0-9_-]/g, '-')
+  const ensureTheme = (themeName: string, customId?: string): string => {
+    const slug = (customId ?? themeName).toLowerCase().replace(/[^a-z0-9_-]/g, '-')
     if (existingThemes.has(slug)) return existingThemes.get(slug)!
-    const newId = store.addTheme(themeName)
+    const newId = store.addTheme(themeName, slug)
     existingThemes.set(slug, newId)
     return newId
   }
@@ -594,11 +606,11 @@ export function importTokensFromCode(
     const themeMatch = selector.match(/\[data-theme=["']?([a-z0-9_-]+)["']?\]|\[data-paper-theme=["']?([a-z0-9_-]+)["']?\]|\.theme-([a-z0-9_-]+)|\.([a-z0-9_-]+)/i)
     if (themeMatch) {
       const candidate = (themeMatch[1] || themeMatch[2] || themeMatch[3] || themeMatch[4]).toLowerCase()
-      if (candidate === 'dark') themeId = ensureTheme('Dark')
-      else if (candidate === 'high-contrast') themeId = ensureTheme('High-Contrast')
+      if (candidate === 'dark') themeId = ensureTheme('Dark', 'dark')
+      else if (candidate === 'high-contrast') themeId = ensureTheme('High-Contrast', 'high-contrast')
       else if (candidate === 'light') themeId = null // Base theme
       else if (candidate !== 'root' && candidate !== 'theme' && !candidate.startsWith('layer')) {
-        themeId = ensureTheme(candidate.charAt(0).toUpperCase() + candidate.slice(1))
+        themeId = ensureTheme(candidate.charAt(0).toUpperCase() + candidate.slice(1), candidate)
       }
     }
 
