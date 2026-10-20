@@ -1084,13 +1084,17 @@ export class SceneStore {
     if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master and finish the active edit first')
     const currentMatrix = master.component.variantMatrix
     if (!currentMatrix) return
+    const removedDim = currentMatrix.dimensions.find(d => d.id === dimensionId || d.name === dimensionId)
     const nextDimensions = currentMatrix.dimensions.filter(d => d.id !== dimensionId && d.name !== dimensionId)
+    const nextCombinations = currentMatrix.combinations.map(comb => {
+      const nextDims = Object.fromEntries(
+        Object.entries(comb.dimensions).filter(([k]) => k !== dimensionId && (!removedDim || k !== removedDim.name))
+      )
+      return { ...comb, dimensions: nextDims }
+    }).filter(c => Object.keys(c.dimensions).length > 0)
     const nextMatrix: ComponentVariantMatrix = {
       dimensions: nextDimensions,
-      combinations: currentMatrix.combinations.map(comb => {
-        const nextDims = Object.fromEntries(Object.entries(comb.dimensions).filter(([k]) => k !== dimensionId))
-        return { ...comb, dimensions: nextDims }
-      }),
+      combinations: nextCombinations,
     }
     this.setVariantMatrix(masterId, nextDimensions.length > 0 ? nextMatrix : null)
   }
@@ -1104,12 +1108,29 @@ export class SceneStore {
     if (!currentMatrix) throw new Error('No variant matrix found on master component')
     const index = currentMatrix.dimensions.findIndex(d => d.id === dimensionId || d.name === dimensionId)
     if (index === -1) throw new Error(`Dimension '${dimensionId}' not found`)
-    const updated = { ...currentMatrix.dimensions[index], ...patch }
+    const oldDim = currentMatrix.dimensions[index]
+    const updated = { ...oldDim, ...patch }
+    if (patch.name) updated.name = patch.name.trim()
     const nextDimensions = [...currentMatrix.dimensions]
     nextDimensions[index] = updated
+
+    const nextCombinations = currentMatrix.combinations.map(c => {
+      if (!patch.name || patch.name.trim() === oldDim.name) return c
+      const newName = patch.name.trim()
+      const nextDims: Record<string, string> = {}
+      for (const [k, v] of Object.entries(c.dimensions)) {
+        if (k === oldDim.name || k === oldDim.id) {
+          nextDims[newName] = v
+        } else {
+          nextDims[k] = v
+        }
+      }
+      return { ...c, dimensions: nextDims }
+    })
+
     this.setVariantMatrix(masterId, {
       dimensions: nextDimensions,
-      combinations: currentMatrix.combinations,
+      combinations: nextCombinations,
     })
   }
 
@@ -1217,9 +1238,7 @@ export class SceneStore {
           const rad = 'cornerRadius' in layer ? Math.max(2, Math.round((layer.cornerRadius ?? 0) * factor)) : undefined
           const fs = layer.type === 'text' ? Math.max(10, Math.round(layer.fontSize * factor)) : undefined
           sizeLayers[layer.id] = {
-            ...baseCapture[layer.id],
             properties: {
-              ...baseCapture[layer.id].properties,
               width: w,
               height: h,
               ...(rad !== undefined ? { cornerRadius: rad } : {}),
@@ -1245,9 +1264,7 @@ export class SceneStore {
           else if (stateVal === 'active') stroke = { color: '#81adec', width: 2, dash: [] }
           else if (stateVal === 'disabled') op = 0.4
           stateLayers[layer.id] = {
-            ...baseCapture[layer.id],
             style: {
-              ...baseCapture[layer.id].style,
               opacity: op,
               ...(stroke ? { stroke } : {}),
             },
@@ -1271,9 +1288,7 @@ export class SceneStore {
         const themeLayers: Record<string, ComponentOverrides> = {}
         for (const layer of layers) {
           themeLayers[layer.id] = {
-            ...baseCapture[layer.id],
             style: {
-              ...baseCapture[layer.id].style,
               fill: layer.type === 'text' ? colors.textFill : colors.fill,
               ...(layer.style.stroke ? { stroke: { ...layer.style.stroke, color: colors.stroke } } : {}),
             },
@@ -1333,6 +1348,38 @@ export class SceneStore {
     this.setVariantMatrix(masterId, nextMatrix)
   }
 
+  /** Resolve all effective variant dimension values for an instance, filling in master defaults for untouched dimensions */
+  resolveActiveVariantDimensions(
+    master: SceneElement,
+    root: SceneElement,
+    explicitDimensions?: Record<string, string>
+  ): Record<string, string> {
+    if (explicitDimensions && Object.keys(explicitDimensions).length > 0) {
+      return { ...explicitDimensions }
+    }
+    const resolved: Record<string, string> = {}
+    const matrix = master.component?.kind === 'master' ? master.component.variantMatrix : undefined
+    if (!matrix || !matrix.dimensions.length) return resolved
+    const propValues = root.component?.kind === 'instance' ? (root.component.propertyValues ?? {}) : {}
+    const activeState = root.component?.kind === 'instance' ? root.component.activeState : undefined
+
+    for (const dim of matrix.dimensions) {
+      let val: string | undefined = undefined
+      if (Object.hasOwn(propValues, dim.id)) {
+        val = String(propValues[dim.id])
+      } else if (Object.hasOwn(propValues, dim.name)) {
+        val = String(propValues[dim.name])
+      } else if (Object.hasOwn(propValues, dim.name.toLowerCase())) {
+        val = String(propValues[dim.name.toLowerCase()])
+      }
+      if (!val && dim.name.toLowerCase() === 'state' && activeState) {
+        val = activeState
+      }
+      resolved[dim.name] = val ?? dim.defaultValue
+    }
+    return resolved
+  }
+
   /** Push localized instance overrides into the master's variant combination */
   pushInstanceOverridesToVariant(instanceId: string, dimensions?: Record<string, string>): void {
     const root = componentRoot(this.state.elements, instanceId)
@@ -1341,15 +1388,13 @@ export class SceneStore {
     if (!isMasterComponent(master)) throw new Error('Choose a master component')
     if (this.isLocked(master.id)) throw new Error('Unlock the master component first')
 
-    const activeDims = dimensions ?? (root.component.propertyValues ? Object.fromEntries(
-      Object.entries(root.component.propertyValues).map(([k, v]) => [k, String(v)])
-    ) : {})
+    const activeDims = this.resolveActiveVariantDimensions(master, root, dimensions)
 
     const layers = subtree(this.state.elements, root.id)
     const capturedLayers: Record<string, ComponentOverrides> = {}
     for (const layer of layers) {
       if (layer.component?.kind === 'instance' && Object.keys(layer.component.overrides).length > 0) {
-        capturedLayers[layer.component.sourceId] = layer.component.overrides
+        capturedLayers[layer.component.sourceId] = structuredClone(layer.component.overrides)
       }
     }
 
@@ -1364,13 +1409,17 @@ export class SceneStore {
     }
 
     const existingIndex = currentMatrix.combinations.findIndex(c =>
-      Object.keys(activeDims).every(k => c.dimensions[k] === activeDims[k])
+      Object.keys(activeDims).every(k => (c.dimensions[k] ?? c.dimensions[k.toLowerCase()]) === activeDims[k]) &&
+      Object.keys(c.dimensions).length === Object.keys(activeDims).length
     )
 
     const nextComb: VariantMatrixCombination = {
       id: existingIndex >= 0 ? currentMatrix.combinations[existingIndex].id : crypto.randomUUID(),
       dimensions: activeDims,
-      layers: capturedLayers,
+      layers: {
+        ...(existingIndex >= 0 ? currentMatrix.combinations[existingIndex].layers : {}),
+        ...capturedLayers,
+      },
     }
 
     const nextCombinations = [...currentMatrix.combinations]
@@ -1380,10 +1429,13 @@ export class SceneStore {
       nextCombinations.push(nextComb)
     }
 
-    this.setVariantMatrix(master.id, {
-      dimensions: currentMatrix.dimensions,
-      combinations: nextCombinations,
-    })
+    this.batch(() => {
+      this.setVariantMatrix(master.id, {
+        dimensions: currentMatrix.dimensions,
+        combinations: nextCombinations,
+      })
+      this.resetInstanceLayerOverrides(root.id)
+    }, `Push instance overrides to variant matrix`)
   }
 
   /** Compute localized scene graph property override diffs between instance and resolved master/variant */
@@ -1425,9 +1477,7 @@ export class SceneStore {
     const node = this.require(layerId)
     if (node.component?.kind !== 'instance') throw new Error('Choose an instance layer')
 
-    const activeDims = dimensions ?? (root.component.propertyValues ? Object.fromEntries(
-      Object.entries(root.component.propertyValues).map(([k, v]) => [k, String(v)])
-    ) : {})
+    const activeDims = this.resolveActiveVariantDimensions(master, root, dimensions)
 
     const currentMatrix = master.component.variantMatrix ?? {
       dimensions: Object.entries(activeDims).map(([k, v]) => ({
@@ -1440,7 +1490,7 @@ export class SceneStore {
     }
 
     const combIndex = currentMatrix.combinations.findIndex(c =>
-      Object.keys(activeDims).every(k => c.dimensions[k] === activeDims[k]) &&
+      Object.keys(activeDims).every(k => (c.dimensions[k] ?? c.dimensions[k.toLowerCase()]) === activeDims[k]) &&
       Object.keys(c.dimensions).length === Object.keys(activeDims).length
     )
 
@@ -1451,43 +1501,103 @@ export class SceneStore {
     }
 
     const sourceId = node.component.sourceId
-    const existingLayerOverrides = existingComb.layers[sourceId] ?? {}
-    const nodeOverrides = node.component.overrides
+    const existingLayerOverrides = (existingComb.layers[sourceId] ?? {}) as Record<string, any>
+    const nodeOverrides = node.component.overrides as Record<string, any>
+    let nextLayerOverrides: Record<string, any> = structuredClone(existingLayerOverrides)
 
-    const [section, propName] = channel.split('.')
-    let nextLayerOverrides = { ...existingLayerOverrides }
-
-    if (section === 'style' && nodeOverrides.style && Object.hasOwn(nodeOverrides.style, propName)) {
-      nextLayerOverrides = {
-        ...nextLayerOverrides,
-        style: {
-          ...nextLayerOverrides.style,
-          [propName]: (nodeOverrides.style as any)[propName],
-        },
-      }
-    } else if (section === 'properties' && nodeOverrides.properties && Object.hasOwn(nodeOverrides.properties, propName)) {
-      nextLayerOverrides = {
-        ...nextLayerOverrides,
-        properties: {
+    if (channel.startsWith('properties.kinetic.') || channel.startsWith('kinetic.')) {
+      const kProp = channel.replace(/^(properties\.)?kinetic\./, '')
+      const kineticOverrides = nodeOverrides.properties?.kinetic as Record<string, unknown> | undefined
+      if (kineticOverrides && Object.hasOwn(kineticOverrides, kProp)) {
+        nextLayerOverrides.properties = {
           ...nextLayerOverrides.properties,
-          [propName]: (nodeOverrides.properties as any)[propName],
-        },
+          kinetic: {
+            ...((nextLayerOverrides.properties?.kinetic as Record<string, unknown>) ?? {}),
+            [kProp]: kineticOverrides[kProp],
+          },
+        }
       }
-    } else if (section === 'tokenBindings' && nodeOverrides.tokenBindings && Object.hasOwn(nodeOverrides.tokenBindings, propName)) {
-      nextLayerOverrides = {
-        ...nextLayerOverrides,
-        tokenBindings: {
+    } else if (channel === 'properties.kinetic' || channel === 'kinetic') {
+      if (nodeOverrides.properties?.kinetic) {
+        nextLayerOverrides.properties = {
+          ...nextLayerOverrides.properties,
+          kinetic: nodeOverrides.properties.kinetic,
+        }
+      }
+    } else if (channel.startsWith('properties.variableAxes.') || channel.startsWith('variableAxes.')) {
+      const axis = channel.replace(/^(properties\.)?variableAxes\./, '')
+      const axesOverrides = nodeOverrides.properties?.variableAxes as Record<string, number> | undefined
+      if (axesOverrides && Object.hasOwn(axesOverrides, axis)) {
+        nextLayerOverrides.properties = {
+          ...nextLayerOverrides.properties,
+          variableAxes: {
+            ...((nextLayerOverrides.properties?.variableAxes as Record<string, number>) ?? {}),
+            [axis]: axesOverrides[axis],
+          },
+        }
+      }
+    } else if (channel.startsWith('style.stroke.') || channel.startsWith('stroke.')) {
+      const sProp = channel.replace(/^(style\.)?stroke\./, '')
+      const strokeOverrides = nodeOverrides.style?.stroke as Record<string, unknown> | undefined
+      if (strokeOverrides && Object.hasOwn(strokeOverrides, sProp)) {
+        nextLayerOverrides.style = {
+          ...nextLayerOverrides.style,
+          stroke: {
+            ...((nextLayerOverrides.style?.stroke as Record<string, unknown>) ?? {}),
+            [sProp]: strokeOverrides[sProp],
+          },
+        }
+      }
+    } else if (channel === 'style.stroke' || channel === 'stroke') {
+      if (nodeOverrides.style?.stroke) {
+        nextLayerOverrides.style = {
+          ...nextLayerOverrides.style,
+          stroke: nodeOverrides.style.stroke,
+        }
+      }
+    } else if (channel.startsWith('style.shader.') || channel.startsWith('shader.')) {
+      const sProp = channel.replace(/^(style\.)?shader\./, '')
+      const shaderOverrides = nodeOverrides.style?.shader as Record<string, any> | undefined
+      if (shaderOverrides) {
+        nextLayerOverrides.style = {
+          ...nextLayerOverrides.style,
+          shader: {
+            ...((nextLayerOverrides.style?.shader as Record<string, any>) ?? {}),
+            [sProp]: shaderOverrides[sProp],
+          },
+        }
+      }
+    } else if (channel.startsWith('tokenBindings.') || (nodeOverrides.tokenBindings && Object.hasOwn(nodeOverrides.tokenBindings, channel))) {
+      const tKey = channel.replace(/^tokenBindings\./, '')
+      if (nodeOverrides.tokenBindings && Object.hasOwn(nodeOverrides.tokenBindings, tKey)) {
+        nextLayerOverrides.tokenBindings = {
           ...nextLayerOverrides.tokenBindings,
-          [propName]: (nodeOverrides.tokenBindings as any)[propName],
-        },
+          [tKey]: (nodeOverrides.tokenBindings as any)[tKey],
+        }
       }
-    } else if (section === 'sharedStyleBindings' && nodeOverrides.sharedStyleBindings && Object.hasOwn(nodeOverrides.sharedStyleBindings, propName)) {
-      nextLayerOverrides = {
-        ...nextLayerOverrides,
-        sharedStyleBindings: {
+    } else if (channel.startsWith('sharedStyleBindings.') || (nodeOverrides.sharedStyleBindings && Object.hasOwn(nodeOverrides.sharedStyleBindings, channel))) {
+      const sKey = channel.replace(/^sharedStyleBindings\./, '')
+      if (nodeOverrides.sharedStyleBindings && Object.hasOwn(nodeOverrides.sharedStyleBindings, sKey)) {
+        nextLayerOverrides.sharedStyleBindings = {
           ...nextLayerOverrides.sharedStyleBindings,
-          [propName]: (nodeOverrides.sharedStyleBindings as any)[propName],
-        },
+          [sKey]: (nodeOverrides.sharedStyleBindings as any)[sKey],
+        }
+      }
+    } else if (channel.startsWith('style.') || (nodeOverrides.style && Object.hasOwn(nodeOverrides.style, channel))) {
+      const sKey = channel.replace(/^style\./, '')
+      if (nodeOverrides.style && Object.hasOwn(nodeOverrides.style, sKey)) {
+        nextLayerOverrides.style = {
+          ...nextLayerOverrides.style,
+          [sKey]: (nodeOverrides.style as any)[sKey],
+        }
+      }
+    } else if (channel.startsWith('properties.') || (nodeOverrides.properties && Object.hasOwn(nodeOverrides.properties, channel))) {
+      const pKey = channel.replace(/^properties\./, '')
+      if (nodeOverrides.properties && Object.hasOwn(nodeOverrides.properties, pKey)) {
+        nextLayerOverrides.properties = {
+          ...nextLayerOverrides.properties,
+          [pKey]: (nodeOverrides.properties as any)[pKey],
+        }
       }
     }
 
@@ -1495,7 +1605,7 @@ export class SceneStore {
       ...existingComb,
       layers: {
         ...existingComb.layers,
-        [sourceId]: nextLayerOverrides,
+        [sourceId]: nextLayerOverrides as ComponentOverrides,
       },
     }
 
@@ -1525,9 +1635,7 @@ export class SceneStore {
     const node = this.require(layerId)
     if (node.component?.kind !== 'instance') throw new Error('Choose an instance layer')
 
-    const activeDims = dimensions ?? (root.component.propertyValues ? Object.fromEntries(
-      Object.entries(root.component.propertyValues).map(([k, v]) => [k, String(v)])
-    ) : {})
+    const activeDims = this.resolveActiveVariantDimensions(master, root, dimensions)
 
     const currentMatrix = master.component.variantMatrix ?? {
       dimensions: Object.entries(activeDims).map(([k, v]) => ({
@@ -1540,7 +1648,7 @@ export class SceneStore {
     }
 
     const combIndex = currentMatrix.combinations.findIndex(c =>
-      Object.keys(activeDims).every(k => c.dimensions[k] === activeDims[k]) &&
+      Object.keys(activeDims).every(k => (c.dimensions[k] ?? c.dimensions[k.toLowerCase()]) === activeDims[k]) &&
       Object.keys(c.dimensions).length === Object.keys(activeDims).length
     )
 
@@ -1555,10 +1663,7 @@ export class SceneStore {
       ...existingComb,
       layers: {
         ...existingComb.layers,
-        [sourceId]: {
-          ...(existingComb.layers[sourceId] ?? {}),
-          ...node.component.overrides,
-        },
+        [sourceId]: structuredClone(node.component.overrides),
       },
     }
 
@@ -1574,13 +1679,149 @@ export class SceneStore {
         dimensions: currentMatrix.dimensions,
         combinations: nextCombinations,
       })
-      this.resetComponentOverrides(layerId)
+      this.resetLayerOverrides(layerId)
     }, `Push ${node.name} overrides to variant combination`)
+  }
+
+  /** Auto-generate the full Cartesian combination matrix across all defined variant dimensions */
+  populateVariantMatrixCombinations(masterId: string): void {
+    const master = this.require(masterId)
+    if (!isMasterComponent(master)) throw new Error('Choose a master component')
+    if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master and finish the active edit first')
+
+    const matrix = master.component.variantMatrix
+    if (!matrix || !matrix.dimensions.length) throw new Error('Define at least one variant dimension before generating combinations')
+
+    const layers = subtree(this.state.elements, master.id)
+    const dimensions = matrix.dimensions
+
+    // Cartesian product of dimensions
+    let allDims: Record<string, string>[] = [{}]
+    for (const dim of dimensions) {
+      const next: Record<string, string>[] = []
+      for (const curr of allDims) {
+        for (const val of dim.values) {
+          next.push({ ...curr, [dim.name]: val })
+        }
+      }
+      allDims = next
+    }
+
+    const existingCombinations = matrix.combinations
+    const nextCombinations: VariantMatrixCombination[] = []
+
+    for (const combDims of allDims) {
+      const existing = existingCombinations.find(c =>
+        dimensions.every(d => (c.dimensions[d.name] ?? c.dimensions[d.name.toLowerCase()] ?? c.dimensions[d.id]) === combDims[d.name])
+      )
+
+      if (existing) {
+        nextCombinations.push({
+          ...existing,
+          dimensions: combDims,
+        })
+        continue
+      }
+
+      const cellLayers: Record<string, ComponentOverrides> = {}
+      const sizeVal = combDims.Size ?? combDims.size
+      const stateVal = combDims.State ?? combDims.state
+      const themeVal = combDims.Theme ?? combDims.theme
+
+      const hasSize = Boolean(sizeVal)
+      const hasState = Boolean(stateVal)
+      const hasTheme = Boolean(themeVal)
+
+      if (hasSize || hasState || hasTheme) {
+        const factor = sizeVal === 'sm' ? 0.85 : sizeVal === 'lg' ? 1.15 : 1
+        const themeColors = themeVal === 'dark'
+          ? { fill: '#080808', textFill: '#edebe1', stroke: '#333333' }
+          : themeVal === 'accent'
+          ? { fill: '#81adec', textFill: '#080808', stroke: '#81adec' }
+          : themeVal === 'contrast'
+          ? { fill: '#222222', textFill: '#edebe1', stroke: '#555555' }
+          : themeVal === 'paper'
+          ? { fill: '#edebe1', textFill: '#080808', stroke: '#222222' }
+          : undefined
+
+        for (const layer of layers) {
+          const layerProps: Record<string, unknown> = {}
+          const layerStyle: Record<string, unknown> = {}
+
+          if (hasSize && factor !== 1) {
+            layerProps.width = Math.round(layer.width * factor)
+            layerProps.height = Math.round(layer.height * factor)
+            if ('cornerRadius' in layer) {
+              layerProps.cornerRadius = Math.max(2, Math.round((layer.cornerRadius ?? 0) * factor))
+            }
+            if (layer.type === 'text') {
+              layerProps.fontSize = Math.max(10, Math.round(layer.fontSize * factor))
+            }
+          }
+
+          if (hasState) {
+            if (stateVal === 'hover') layerStyle.opacity = 0.9
+            else if (stateVal === 'pressed') layerStyle.opacity = 0.75
+            else if (stateVal === 'active') layerStyle.stroke = { color: '#81adec', width: 2, dash: [] }
+            else if (stateVal === 'disabled') layerStyle.opacity = 0.4
+          }
+
+          if (hasTheme && themeColors) {
+            layerStyle.fill = layer.type === 'text' ? themeColors.textFill : themeColors.fill
+            if (layer.style.stroke) {
+              layerStyle.stroke = { ...layer.style.stroke, color: themeColors.stroke }
+            }
+          }
+
+          if (Object.keys(layerProps).length > 0 || Object.keys(layerStyle).length > 0) {
+            cellLayers[layer.id] = {
+              ...(Object.keys(layerProps).length > 0 ? { properties: layerProps } : {}),
+              ...(Object.keys(layerStyle).length > 0 ? { style: layerStyle } : {}),
+            }
+          }
+        }
+      }
+
+      nextCombinations.push({
+        id: crypto.randomUUID(),
+        dimensions: combDims,
+        layers: cellLayers,
+        description: Object.entries(combDims).map(([k, v]) => `${k}:${v}`).join(' '),
+      })
+    }
+
+    this.setVariantMatrix(masterId, {
+      dimensions,
+      combinations: nextCombinations,
+    })
   }
 
   /** Reset all overrides on an entire instance tree */
   resetAllComponentOverrides(instanceId: string): void {
-    this.resetComponentOverrides(instanceId)
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') throw new Error('Choose a component instance')
+    this.resetComponentOverrides(root.id)
+  }
+
+  /** Reset only the localized layer visual overrides (style, properties, tokens) across an instance, preserving variant propertyValues */
+  resetInstanceLayerOverrides(instanceId: string): void {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') throw new Error('Choose an instance layer')
+    if (this.isLocked(root.id) || this.history.getSnapshot().active) throw new Error('Unlock the layer and finish the active edit first')
+    const elements = { ...this.state.elements }
+    const nodes = subtree(elements, root.id)
+    for (const child of nodes) {
+      if (child.component?.kind === 'instance') {
+        elements[child.id] = freezeElement({
+          ...child,
+          component: {
+            ...child.component,
+            overrides: {},
+          },
+        })
+      }
+    }
+    this.commit(elements, this.state.rootIds, this.state.selection, `Reset ${root.name} layer overrides`)
   }
 
   /** Reset overrides on a specific layer in an instance subtree */
@@ -1761,7 +2002,19 @@ export class SceneStore {
     if (this.isLocked(id) || this.history.getSnapshot().active) throw new Error('Unlock the layer and finish the active edit first')
     const elements = { ...this.state.elements }
     const nodes = node.component.instanceId === id ? subtree(elements, id) : [node]
-    for (const child of nodes) if (child.component?.kind === 'instance') elements[child.id] = freezeElement({ ...child, component: { ...child.component, overrides: {}, ...(child.id === id && child.component.propertyValues ? { propertyValues: {} } : {}) } })
+    for (const child of nodes) {
+      if (child.component?.kind === 'instance') {
+        const nextComp = {
+          ...child.component,
+          overrides: {},
+          ...(child.id === id && child.component.propertyValues ? { propertyValues: {} } : {}),
+        }
+        if (child.id === id) {
+          delete (nextComp as { activeState?: string }).activeState
+        }
+        elements[child.id] = freezeElement({ ...child, component: nextComp })
+      }
+    }
     this.commit(elements, this.state.rootIds, this.state.selection, `Reset ${node.name} overrides`)
   }
 
@@ -1855,50 +2108,69 @@ export class SceneStore {
       })
     }
 
-    // If root instance had propertyValues, update master component.properties default values
+    // If root instance had propertyValues, update master component.properties and variantMatrix.dimensions default values
     const rootComponent = root.component
-    if (rootComponent.propertyValues && Object.keys(rootComponent.propertyValues).length && master.component.properties) {
-      const updatedProperties = master.component.properties.map(prop => {
-        if (Object.hasOwn(rootComponent.propertyValues ?? {}, prop.id)) {
-          const val = (rootComponent.propertyValues as any)[prop.id]
-          return { ...prop, defaultValue: val }
-        }
-        return prop
-      })
+    if (rootComponent.propertyValues && Object.keys(rootComponent.propertyValues).length) {
+      let currentMaster = elements[master.id]
+      let updatedMasterComponent = { ...currentMaster.component } as any
 
-      // Also apply the property values to the target master layers
-      for (const [propId, val] of Object.entries(rootComponent.propertyValues)) {
-        const prop = updatedProperties.find(p => p.id === propId)
-        if (!prop) continue
-        if (prop.kind === 'variant') {
-          const opt = prop.options.find(o => o.value === val)
-          if (opt?.layers) {
-            for (const [layerId] of Object.entries(opt.layers)) {
-              const layerElem = elements[layerId]
-              if (layerElem) {
-                const updatedLayer = applyPropertyValueToElement(layerElem, prop, val)
-                validateElement(updatedLayer)
-                elements[layerId] = freezeElement(updatedLayer)
+      if (master.component.properties?.length) {
+        const updatedProperties = master.component.properties.map(prop => {
+          const key = Object.keys(rootComponent.propertyValues ?? {}).find(k => k === prop.id || k.toLowerCase() === prop.name.toLowerCase())
+          if (key && Object.hasOwn(rootComponent.propertyValues ?? {}, key)) {
+            const val = (rootComponent.propertyValues as any)[key]
+            return { ...prop, defaultValue: val }
+          }
+          return prop
+        })
+
+        // Also apply the property values to the target master layers
+        for (const [propId, val] of Object.entries(rootComponent.propertyValues)) {
+          const prop = updatedProperties.find(p => p.id === propId || p.name.toLowerCase() === propId.toLowerCase())
+          if (!prop) continue
+          if (prop.kind === 'variant') {
+            const opt = prop.options.find(o => o.value === val)
+            if (opt?.layers) {
+              for (const [layerId] of Object.entries(opt.layers)) {
+                const layerElem = elements[layerId]
+                if (layerElem) {
+                  const updatedLayer = applyPropertyValueToElement(layerElem, prop, val)
+                  validateElement(updatedLayer)
+                  elements[layerId] = freezeElement(updatedLayer)
+                }
               }
             }
+          } else {
+            const targetElement = elements[prop.sourceId]
+            if (targetElement) {
+              const updated = applyPropertyValueToElement(targetElement, prop, val)
+              validateElement(updated)
+              elements[prop.sourceId] = freezeElement(updated)
+            }
           }
-        } else {
-          const targetElement = elements[prop.sourceId]
-          if (targetElement) {
-            const updated = applyPropertyValueToElement(targetElement, prop, val)
-            validateElement(updated)
-            elements[prop.sourceId] = freezeElement(updated)
+        }
+        updatedMasterComponent.properties = updatedProperties
+      }
+
+      if (master.component.variantMatrix?.dimensions.length) {
+        const updatedDimensions = master.component.variantMatrix.dimensions.map(dim => {
+          const key = Object.keys(rootComponent.propertyValues ?? {}).find(k => k === dim.id || k.toLowerCase() === dim.name.toLowerCase())
+          if (key && Object.hasOwn(rootComponent.propertyValues ?? {}, key)) {
+            const val = String((rootComponent.propertyValues as any)[key])
+            return { ...dim, defaultValue: val }
           }
+          return dim
+        })
+        updatedMasterComponent.variantMatrix = {
+          ...master.component.variantMatrix,
+          dimensions: updatedDimensions,
         }
       }
 
-      const currentMaster = elements[master.id]
+      updatedMasterComponent.updatedAt = Date.now()
       elements[master.id] = freezeElement({
-        ...currentMaster,
-        component: {
-          ...currentMaster.component,
-          properties: updatedProperties,
-        } as any,
+        ...elements[master.id],
+        component: updatedMasterComponent,
       })
 
       // Clear property values on instance root
@@ -1924,50 +2196,94 @@ export class SceneStore {
     if (this.isLocked(master.id)) throw new Error('Unlock the master component first')
 
     const rootComponent = root.component
-    if (!rootComponent.propertyValues || !Object.hasOwn(rootComponent.propertyValues, propertyId)) {
+    if (!rootComponent.propertyValues) {
       throw new Error('This property has no local override to push')
     }
-    const val = rootComponent.propertyValues[propertyId]
-    const prop = master.component.properties?.find(p => p.id === propertyId)
-    if (!prop) throw new Error('Property not found on master component')
 
-    let elements = { ...this.state.elements }
-    const updatedProperties = (master.component.properties ?? []).map(p =>
-      p.id === propertyId ? { ...p, defaultValue: val } : p
+    const prop = master.component.properties?.find(p => p.id === propertyId || p.name.toLowerCase() === propertyId.toLowerCase())
+    const variantDim = master.component.variantMatrix?.dimensions.find(d => d.id === propertyId || d.name.toLowerCase() === propertyId.toLowerCase())
+
+    if (!prop && !variantDim) throw new Error('Property not found on master component')
+
+    const matchingKey = Object.keys(rootComponent.propertyValues).find(k =>
+      k === propertyId ||
+      (prop && (k === prop.id || k.toLowerCase() === prop.name.toLowerCase())) ||
+      (variantDim && (k === variantDim.id || k.toLowerCase() === variantDim.name.toLowerCase()))
     )
 
-    if (prop.kind === 'variant') {
-      const opt = prop.options.find(o => o.value === val)
-      if (opt?.layers) {
-        for (const [layerId] of Object.entries(opt.layers)) {
-          const layerElem = elements[layerId]
-          if (layerElem) {
-            const updatedLayer = applyPropertyValueToElement(layerElem, prop, val)
-            validateElement(updatedLayer)
-            elements[layerId] = freezeElement(updatedLayer)
-          }
-        }
-      }
-    } else {
-      const targetElement = elements[prop.sourceId]
-      if (targetElement) {
-        const updated = applyPropertyValueToElement(targetElement, prop, val)
-        validateElement(updated)
-        elements[prop.sourceId] = freezeElement(updated)
-      }
+    if (!matchingKey || !Object.hasOwn(rootComponent.propertyValues, matchingKey)) {
+      throw new Error('This property has no local override to push')
     }
 
-    const currentMaster = elements[master.id]
-    elements[master.id] = freezeElement({
-      ...currentMaster,
-      component: {
-        ...currentMaster.component,
-        properties: updatedProperties,
-      } as any,
-    })
+    const val = rootComponent.propertyValues[matchingKey]
+    let elements = { ...this.state.elements }
+
+    if (variantDim) {
+      const currentMatrix = master.component.variantMatrix!
+      const updatedDimensions = currentMatrix.dimensions.map(d =>
+        d.id === variantDim.id ? { ...d, defaultValue: String(val) } : d
+      )
+      const nextMatrix: ComponentVariantMatrix = {
+        dimensions: updatedDimensions,
+        combinations: currentMatrix.combinations,
+      }
+      const currentMaster = elements[master.id]
+      elements[master.id] = freezeElement({
+        ...currentMaster,
+        component: {
+          ...currentMaster.component,
+          variantMatrix: nextMatrix,
+          updatedAt: Date.now(),
+        } as any,
+      })
+    } else if (prop) {
+      const updatedProperties = (master.component.properties ?? []).map(p =>
+        p.id === prop.id ? { ...p, defaultValue: val } : p
+      )
+
+      if (prop.kind === 'variant') {
+        const opt = prop.options.find(o => o.value === val)
+        if (opt?.layers) {
+          for (const [layerId] of Object.entries(opt.layers)) {
+            const layerElem = elements[layerId]
+            if (layerElem) {
+              const updatedLayer = applyPropertyValueToElement(layerElem, prop, val)
+              validateElement(updatedLayer)
+              elements[layerId] = freezeElement(updatedLayer)
+            }
+          }
+        }
+      } else {
+        const targetElement = elements[prop.sourceId]
+        if (targetElement) {
+          const updated = applyPropertyValueToElement(targetElement, prop, val)
+          validateElement(updated)
+          elements[prop.sourceId] = freezeElement(updated)
+        }
+      }
+
+      const currentMaster = elements[master.id]
+      elements[master.id] = freezeElement({
+        ...currentMaster,
+        component: {
+          ...currentMaster.component,
+          properties: updatedProperties,
+          updatedAt: Date.now(),
+        } as any,
+      })
+    }
 
     const nextPropertyValues = { ...rootComponent.propertyValues }
-    delete nextPropertyValues[propertyId]
+    delete nextPropertyValues[matchingKey]
+    if (variantDim) {
+      delete nextPropertyValues[variantDim.id]
+      delete nextPropertyValues[variantDim.name]
+    }
+    if (prop) {
+      delete nextPropertyValues[prop.id]
+      delete nextPropertyValues[prop.name]
+    }
+
     elements[root.id] = freezeElement({
       ...elements[root.id],
       component: {
@@ -1976,7 +2292,7 @@ export class SceneStore {
       } as any,
     })
 
-    this.commit(elements, this.state.rootIds, this.state.selection, `Push ${prop.name} to ${master.name}`)
+    this.commit(elements, this.state.rootIds, this.state.selection, `Push ${prop?.name ?? variantDim?.name} to ${master.name}`)
   }
 
   /** Push local visual and property overrides from a single instance layer back to its master layer. */

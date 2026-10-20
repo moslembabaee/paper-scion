@@ -253,3 +253,205 @@ test('variant matrix and instance property overrides roundtrip serialize and des
   assert.equal(restoredInstance.component.propertyValues.Size, 'lg')
   assert.equal(restoredInstance.component.propertyValues.Theme, 'dark')
 })
+
+test('automated change propagation: master modifications propagate immediately to variant instances across multiple dimensions', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  // Create two instances with different variant sizes
+  const instSm = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instSm.id, 'Size', 'sm')
+
+  const instLg = store.createComponentInstance('btn', { x: 740, y: 120 })
+  store.setComponentProperty(instLg.id, 'Size', 'lg')
+
+  const getSmLayer = sourceId => subtree(store.getSnapshot().elements, instSm.id).find(n => n.component.sourceId === sourceId)
+  const getLgLayer = sourceId => subtree(store.getSnapshot().elements, instLg.id).find(n => n.component.sourceId === sourceId)
+
+  // Verify initial size scaling
+  assert.ok(getSmLayer('btn-bg').width < 240)
+  assert.ok(getLgLayer('btn-bg').width > 240)
+
+  // Initial fill and text match master
+  assert.equal(getSmLayer('btn-bg').style.fill, '#edebe1')
+  assert.equal(getLgLayer('btn-bg').style.fill, '#edebe1')
+  assert.equal(getSmLayer('btn-text').text, 'Button Text')
+  assert.equal(getLgLayer('btn-text').text, 'Button Text')
+
+  // 1. Update master text -> must propagate to both variant instances automatically!
+  store.update('btn-text', 'text', { text: 'Automated Master Text' })
+  assert.equal(getSmLayer('btn-text').text, 'Automated Master Text')
+  assert.equal(getLgLayer('btn-text').text, 'Automated Master Text')
+
+  // 2. Update master background fill -> must propagate to both variant instances automatically!
+  store.update('btn-bg', 'rectangle', { style: { fill: '#ff4400', stroke: { color: '#000000', width: 2, dash: [] } } })
+  assert.equal(getSmLayer('btn-bg').style.fill, '#ff4400')
+  assert.equal(getLgLayer('btn-bg').style.fill, '#ff4400')
+  assert.equal(getSmLayer('btn-bg').style.stroke.color, '#000000')
+  assert.equal(getLgLayer('btn-bg').style.stroke.color, '#000000')
+
+  // Size scaling remains active and correct!
+  assert.ok(getSmLayer('btn-bg').width < 240)
+  assert.ok(getLgLayer('btn-bg').width > 240)
+})
+
+test('pushComponentPropertyToMaster pushes variant dimension override to master defaultValue and clears instance propertyValues', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  const instance = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instance.id, 'Size', 'lg')
+
+  let instNode = store.getSnapshot().elements[instance.id]
+  assert.equal(instNode.component.propertyValues.Size, 'lg')
+
+  let master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.dimensions[0].defaultValue, 'md')
+
+  // Push Size dimension override to master
+  store.pushComponentPropertyToMaster(instance.id, 'Size')
+
+  master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.dimensions[0].defaultValue, 'lg')
+
+  // Instance propertyValues is now cleared, inheriting the new master default
+  instNode = store.getSnapshot().elements[instance.id]
+  assert.equal(instNode.component.propertyValues?.Size, undefined)
+
+  // Another new instance created inherits 'lg' as default
+  const instance2 = store.createComponentInstance('btn', { x: 740, y: 120 })
+  const getSublayer2 = sourceId => subtree(store.getSnapshot().elements, instance2.id).find(n => n.component.sourceId === sourceId)
+  assert.ok(getSublayer2('btn-bg').width > 240)
+})
+
+test('pushOverridesToMaster pushes variant dimension overrides and visual overrides together', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  const instance = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instance.id, 'Size', 'sm')
+
+  const getSublayer = sourceId => subtree(store.getSnapshot().elements, instance.id).find(n => n.component.sourceId === sourceId)
+  store.update(getSublayer('btn-text').id, 'text', { text: 'Global New Default Text' })
+
+  // Push all overrides from instance to master
+  store.pushOverridesToMaster(instance.id)
+
+  const master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.dimensions[0].defaultValue, 'sm')
+  const masterText = store.getSnapshot().elements['btn-text']
+  assert.equal(masterText.text, 'Global New Default Text')
+
+  // Instance overrides and property values are cleanly reset
+  const instNode = store.getSnapshot().elements[instance.id]
+  assert.equal(instNode.component.propertyValues?.Size, undefined)
+  const instText = getSublayer('btn-text')
+  assert.equal(instText.component.overrides.properties?.text, undefined)
+})
+
+test('pushInstanceOverridesToVariant captures all layer overrides into variant combination and clears localized overrides', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  const instance = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instance.id, 'Size', 'lg')
+
+  const getSublayer = sourceId => subtree(store.getSnapshot().elements, instance.id).find(n => n.component.sourceId === sourceId)
+  const txtNode = getSublayer('btn-text')
+  const bgNode = getSublayer('btn-bg')
+
+  store.update(txtNode.id, 'text', { text: 'Large Size CTA' })
+  store.update(bgNode.id, 'rectangle', { style: { ...bgNode.style, fill: '#81adec' } })
+
+  assert.equal(getSublayer('btn-text').component.overrides.properties.text, 'Large Size CTA')
+  assert.equal(getSublayer('btn-bg').component.overrides.style.fill, '#81adec')
+
+  // Push all instance overrides to active variant combination (Size=lg)
+  store.pushInstanceOverridesToVariant(instance.id)
+
+  // Local overrides on instance are cleared, but instance stays on Size=lg
+  assert.equal(getSublayer('btn-text').component.overrides.properties?.text, undefined)
+  assert.equal(getSublayer('btn-bg').component.overrides.style?.fill, undefined)
+  assert.equal(store.getSnapshot().elements[instance.id].component.propertyValues.Size, 'lg')
+
+  // Instance still renders the pushed text and fill because it inherits them from the Size=lg combination!
+  assert.equal(getSublayer('btn-text').text, 'Large Size CTA')
+  assert.equal(getSublayer('btn-bg').style.fill, '#81adec')
+
+  // A new instance switching to Size=lg also receives the pushed styles!
+  const instance2 = store.createComponentInstance('btn', { x: 740, y: 120 })
+  store.setComponentProperty(instance2.id, 'Size', 'lg')
+  const getSublayer2 = sourceId => subtree(store.getSnapshot().elements, instance2.id).find(n => n.component.sourceId === sourceId)
+  assert.equal(getSublayer2('btn-text').text, 'Large Size CTA')
+  assert.equal(getSublayer2('btn-bg').style.fill, '#81adec')
+})
+
+test('populateVariantMatrixCombinations generates complete Cartesian combinations with smart semantics', () => {
+  const store = setupButtonMaster()
+  store.addVariantDimension('btn', { name: 'Size', values: ['sm', 'md', 'lg'], defaultValue: 'md' })
+  store.addVariantDimension('btn', { name: 'Theme', values: ['paper', 'dark'], defaultValue: 'paper' })
+
+  let master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.combinations.length, 0)
+
+  // Auto-populate 3 sizes × 2 themes = 6 combinations
+  store.populateVariantMatrixCombinations('btn')
+  master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.combinations.length, 6)
+
+  const smDark = master.component.variantMatrix.combinations.find(c => c.dimensions.Size === 'sm' && c.dimensions.Theme === 'dark')
+  assert.ok(smDark)
+  assert.ok(smDark.layers['btn-bg'].properties.width < 240)
+  assert.equal(smDark.layers['btn-bg'].style.fill, '#080808')
+})
+
+test('subchannel override pushing: pushPropertyOverrideToVariant isolates nested style and properties', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  const instance = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instance.id, 'Size', 'sm')
+  const getSublayer = sourceId => subtree(store.getSnapshot().elements, instance.id).find(n => n.component.sourceId === sourceId)
+
+  const bg = getSublayer('btn-bg')
+  // Update stroke with custom color and custom width
+  store.update(bg.id, 'rectangle', { style: { ...bg.style, stroke: { color: '#81adec', width: 4, dash: [] } } })
+
+  // Push only the stroke color to variant combination
+  store.pushPropertyOverrideToVariant(bg.id, 'style.stroke.color', { Size: 'sm' })
+
+  // The stroke color override was cleared on the instance, but stroke width (4) remains local!
+  const bgAfter = getSublayer('btn-bg')
+  assert.equal(bgAfter.component.overrides.style.stroke?.color, undefined)
+  assert.equal(bgAfter.component.overrides.style.stroke?.width, 4)
+
+  // Master variant combination for Size=sm contains stroke color #81adec
+  const master = store.getSnapshot().elements.btn
+  const smComb = master.component.variantMatrix.combinations.find(c => c.dimensions.Size === 'sm')
+  assert.equal(smComb.layers['btn-bg'].style.stroke.color, '#81adec')
+})
+
+test('updateVariantDimension renames dimension keys in combinations consistently', () => {
+  const store = setupButtonMaster()
+  store.applyVariantMatrixPreset('btn', 'size')
+
+  let master = store.getSnapshot().elements.btn
+  const sizeDim = master.component.variantMatrix.dimensions[0]
+  assert.equal(sizeDim.name, 'Size')
+  assert.ok(master.component.variantMatrix.combinations.every(c => Object.hasOwn(c.dimensions, 'Size')))
+
+  // Rename dimension 'Size' to 'ComponentSize'
+  store.updateVariantDimension('btn', sizeDim.id, { name: 'ComponentSize' })
+
+  master = store.getSnapshot().elements.btn
+  assert.equal(master.component.variantMatrix.dimensions[0].name, 'ComponentSize')
+  assert.ok(master.component.variantMatrix.combinations.every(c => Object.hasOwn(c.dimensions, 'ComponentSize')))
+  assert.ok(master.component.variantMatrix.combinations.every(c => !Object.hasOwn(c.dimensions, 'Size')))
+
+  // Instances can resolve with the new dimension name
+  const instance = store.createComponentInstance('btn', { x: 480, y: 120 })
+  store.setComponentProperty(instance.id, 'ComponentSize', 'sm')
+  const getSublayer = sourceId => subtree(store.getSnapshot().elements, instance.id).find(n => n.component.sourceId === sourceId)
+  assert.ok(getSublayer('btn-bg').width < 240)
+})
+

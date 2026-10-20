@@ -541,13 +541,15 @@ export function getComponentOverrideDiff(
   const sourceLayer = (allElements && allElements[instance.component.sourceId]) ?? master
   for (const [key, val] of Object.entries(properties)) {
     const origVal = (sourceLayer as any)[key]
+    const mStr = origVal !== undefined ? (typeof origVal === 'object' && origVal !== null ? JSON.stringify(origVal) : String(origVal)) : 'default'
+    const oStr = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val)
     diffs.push({
       layerId: instance.id,
       layerName: instance.name,
       channel: `properties.${key}`,
       label: key[0].toUpperCase() + key.slice(1),
-      masterValue: origVal !== undefined ? String(origVal) : 'default',
-      overrideValue: String(val),
+      masterValue: mStr,
+      overrideValue: oStr,
     })
   }
 
@@ -593,8 +595,8 @@ export function getComponentOverrideDiff(
 
   if (propertyValues && instance.id === instance.component.instanceId) {
     for (const [propId, val] of Object.entries(propertyValues)) {
-      const prop = master.component?.properties?.find(p => p.id === propId || p.name === propId)
-      const dim = master.component?.variantMatrix?.dimensions.find(d => d.id === propId || d.name === propId)
+      const prop = master.component?.properties?.find(p => p.id === propId || p.name === propId || p.name.toLowerCase() === propId.toLowerCase())
+      const dim = master.component?.variantMatrix?.dimensions.find(d => d.id === propId || d.name === propId || d.name.toLowerCase() === propId.toLowerCase())
       const label = prop ? prop.name : (dim ? dim.name : propId)
       const defaultVal = prop ? String(prop.defaultValue) : (dim ? dim.defaultValue : 'default')
       diffs.push({
