@@ -20,6 +20,7 @@ import {
   exportToTypeScript,
   importTokensFromCode,
 } from '../src/tokens/export.ts'
+import { setupFoundationDesignSystem } from '../src/tokens/foundation.ts'
 
 function createTestScene() {
   const store = new SceneStore()
@@ -366,4 +367,146 @@ test('bi-directional token import parses CSS variables with theme modes into sto
 
   // Verify dark mode override was captured
   assert.equal(primary.themeValues?.['dark'], '#60a5fa')
+})
+
+test('elevation shadow binding, auto-bind, and Tailwind v4 / CSS export', () => {
+  const store = createTestScene()
+  ensureStandardModes(store)
+
+  // Add rectangle with a shadow of distance 8
+  store.add('rectangle', {
+    id: 'floating-card',
+    width: 280,
+    height: 180,
+    style: { fill: '#ffffff', shadow: { color: '#08080826', x: 0, y: 8, blur: 16 } },
+  })
+
+  // Add elevation token
+  const elevation8 = store.addToken({ type: 'elevation', name: 'raised', value: 8 })
+
+  // Auto-bind matches shadow.y === 8
+  const res = autoBindMatchingNodes(store)
+  assert.ok(res.matchedTokens.includes('raised'))
+  assert.equal(store.getSnapshot().elements['floating-card'].tokenBindings?.shadow, elevation8.id)
+
+  // Verify Tailwind CSS v4 and CSS variables export both --elevation and --shadow variables
+  const twV4 = exportToTailwindV4(store.getSnapshot().tokens, store.getSnapshot().styleLibrary)
+  assert.ok(twV4.includes('--elevation-raised: 8px;'))
+  assert.ok(twV4.includes('--shadow-raised: 0px var(--elevation-raised) calc(var(--elevation-raised) * 2) rgba(8, 8, 8, 0.15);'))
+
+  const css = exportToCSSVariables(store.getSnapshot().tokens, store.getSnapshot().styleLibrary)
+  assert.ok(css.includes('--elevation-raised: 8px;'))
+  assert.ok(css.includes('--shadow-raised: 0px var(--elevation-raised) calc(var(--elevation-raised) * 2) rgba(8, 8, 8, 0.15);'))
+})
+
+test('typography scale aliasing and multi-mode theme switching', () => {
+  const store = createTestScene()
+  ensureStandardModes(store)
+
+  const sizeBase = store.addToken({ type: 'fontSize', name: 'size-base', value: 16 })
+  const sizeLg = store.addToken({ type: 'fontSize', name: 'size-lg', value: 20 })
+
+  // Semantic token aliased to sizeBase by default, but sizeLg in high-contrast mode for enhanced readability
+  const bodyTextSize = store.addToken({ type: 'fontSize', name: 'body-reading', value: 16, aliasId: sizeBase.id })
+  store.setTokenThemeAlias(bodyTextSize.id, 'high-contrast', sizeLg.id)
+
+  store.bindToken('body', 'fontSize', bodyTextSize.id)
+  assert.equal(store.getSnapshot().elements.body.fontSize, 16)
+
+  // Switch to high-contrast mode -> fontSize becomes 20
+  switchThemeMode(store, 'high-contrast')
+  assert.equal(store.getSnapshot().elements.body.fontSize, 20)
+
+  // Switch back to light / base mode -> fontSize becomes 16
+  switchThemeMode(store, null)
+  assert.equal(store.getSnapshot().elements.body.fontSize, 16)
+})
+
+test('bi-directional import with rem units, shadow strings, and Tailwind v4 @theme format', () => {
+  const store = new SceneStore()
+
+  const twCode = `
+    @theme {
+      --color-brand: #3b82f6;
+      --spacing-md: 1.5rem;
+      --rounded-box: 10px;
+      --shadow-dropdown: 0px 6px 12px rgba(0,0,0,0.15);
+      --font-display: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    @layer base {
+      [data-theme="dark"] {
+        --color-brand: #60a5fa;
+      }
+    }
+  `
+
+  const result = importTokensFromCode(store, twCode)
+  assert.equal(result.errors.length, 0)
+  assert.equal(result.importedCount, 5)
+
+  const tokens = store.getSnapshot().tokens
+  const brand = tokens.find(t => t.name === 'brand')
+  const spacing = tokens.find(t => t.name === 'md')
+  const radius = tokens.find(t => t.name === 'box')
+  const shadow = tokens.find(t => t.name === 'dropdown')
+  const font = tokens.find(t => t.name === 'display')
+
+  assert.ok(brand)
+  assert.equal(brand.type, 'color')
+  assert.equal(brand.value, '#3b82f6')
+  assert.equal(brand.themeValues?.dark, '#60a5fa')
+
+  // 1.5rem was converted to 24px
+  assert.ok(spacing)
+  assert.equal(spacing.type, 'spacing')
+  assert.equal(spacing.value, 24)
+
+  assert.ok(radius)
+  assert.equal(radius.type, 'radius')
+  assert.equal(radius.value, 10)
+
+  // Shadow 0px 6px 12px extracted elevation distance 6
+  assert.ok(shadow)
+  assert.equal(shadow.type, 'elevation')
+  assert.equal(shadow.value, 6)
+
+  assert.ok(font)
+  assert.equal(font.type, 'fontFamily')
+  assert.equal(font.value, "'Plus Jakarta Sans', sans-serif")
+})
+
+test('TypeScript code generator produces resolveTokenValue helper and valid theme mode types', () => {
+  const store = createTestScene()
+  ensureStandardModes(store)
+
+  const primary = store.addToken({ type: 'color', name: 'primary', value: '#2563eb' })
+  store.setTokenThemeValue(primary.id, 'dark', '#60a5fa')
+
+  const tsCode = exportToTypeScript(store.getSnapshot().tokens, store.getSnapshot().styleLibrary)
+  assert.ok(tsCode.includes('export function resolveTokenValue'))
+  assert.ok(tsCode.includes("export type ThemeModeId = 'light' | 'dark' | 'high-contrast'"))
+})
+
+test('setupFoundationDesignSystem initializes standard Light, Dark, High-Contrast modes and adds full token palette', () => {
+  const store = new SceneStore()
+  assert.equal(store.getSnapshot().styleLibrary.themes.length, 0)
+  assert.equal(store.getSnapshot().tokens.length, 0)
+
+  const { addedCount, themesCreated } = setupFoundationDesignSystem(store)
+  assert.equal(themesCreated, 3)
+  assert.ok(addedCount > 15)
+
+  const snapshot = store.getSnapshot()
+  assert.deepEqual(snapshot.styleLibrary.themes.map(t => t.id), ['light', 'dark', 'high-contrast'])
+
+  const paperToken = snapshot.tokens.find(t => t.name === 'paper')
+  assert.ok(paperToken)
+  assert.equal(paperToken.themeValues?.dark, '#0c0c0c')
+  assert.equal(paperToken.themeValues?.['high-contrast'], '#000000')
+
+  // Calling it again is idempotent
+  const secondRun = setupFoundationDesignSystem(store)
+  assert.equal(secondRun.themesCreated, 0)
+  assert.equal(secondRun.addedCount, 0)
 })

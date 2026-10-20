@@ -75,8 +75,11 @@ export function exportToTailwindV4(tokens: readonly DesignToken[], library: Styl
     for (const t of groups.radius) sections.push(formatDecl(t))
   }
   if (groups.elevation.length) {
-    sections.push('\n  /* --- Elevation Variables --- */')
-    for (const t of groups.elevation) sections.push(formatDecl(t))
+    sections.push('\n  /* --- Elevation & Shadow Variables --- */')
+    for (const t of groups.elevation) {
+      sections.push(formatDecl(t))
+      sections.push(`  --shadow-${t.name}: 0px var(${tokenVariable(t)}) calc(var(${tokenVariable(t)}) * 2) rgba(8, 8, 8, 0.15);`)
+    }
   }
   if (groups.layout.length) {
     sections.push('\n  /* --- Container & Breakpoint Variables --- */')
@@ -211,8 +214,11 @@ export function exportToCSSVariables(tokens: readonly DesignToken[], library: St
     for (const t of groups.radius) lines.push(formatDecl(t))
   }
   if (groups.elevation.length) {
-    lines.push('\n  /* --- Elevation --- */')
-    for (const t of groups.elevation) lines.push(formatDecl(t))
+    lines.push('\n  /* --- Elevation & Shadows --- */')
+    for (const t of groups.elevation) {
+      lines.push(formatDecl(t))
+      lines.push(`  --shadow-${t.name}: 0px var(${tokenVariable(t)}) calc(var(${tokenVariable(t)}) * 2) rgba(8, 8, 8, 0.15);`)
+    }
   }
   if (groups.layout.length) {
     lines.push('\n  /* --- Layout & Breakpoints --- */')
@@ -435,6 +441,22 @@ export function exportToTypeScript(tokens: readonly DesignToken[], library: Styl
   lines.push('/** Returns CSS var() declaration for a token */')
   lines.push('export function tokenVar(type: keyof typeof tokens, name: string): string {')
   lines.push('  return `var(${tokenVariable(type, name)})`')
+  lines.push('}\n')
+
+  lines.push('/** Resolves a token value for a specific theme mode, falling back to base value */')
+  lines.push('export function resolveTokenValue<T extends keyof typeof tokens>(')
+  lines.push('  themeId: ThemeModeId | null,')
+  lines.push('  type: T,')
+  lines.push('  name: keyof typeof tokens[T]')
+  lines.push('): string | number {')
+  lines.push('  if (themeId && themeId in themeOverrides) {')
+  lines.push('    const overrides = (themeOverrides as Record<string, Record<string, string | number>>)[themeId]')
+  lines.push('    const overrideKey = `${type}.${String(name)}`')
+  lines.push('    if (overrides && overrideKey in overrides) {')
+  lines.push('      return overrides[overrideKey]')
+  lines.push('    }')
+  lines.push('  }')
+  lines.push('  return (tokens[type] as Record<string, string | number>)[String(name)]')
   lines.push('}')
 
   return lines.join('\n')
@@ -450,9 +472,27 @@ function inferTokenTypeAndName(variable: string): { type: TokenType; name: strin
       return { type: t, name: variable.slice(ns.length + 1) }
     }
   }
-  // Fallback heuristics
+  // Common CSS / Tailwind fallback heuristics
   if (variable.startsWith('bg-') || variable.startsWith('border-') || variable.startsWith('text-color-')) {
     return { type: 'color', name: variable.replace(/^(?:bg|border|text-color)-/, '') }
+  }
+  if (variable.startsWith('shadow-')) {
+    return { type: 'elevation', name: variable.slice('shadow-'.length) }
+  }
+  if (variable.startsWith('space-') || variable.startsWith('gap-') || variable.startsWith('pad-') || variable.startsWith('inset-')) {
+    return { type: 'spacing', name: variable.replace(/^(?:space|gap|pad|inset)-/, '') }
+  }
+  if (variable.startsWith('rounded-')) {
+    return { type: 'radius', name: variable.slice('rounded-'.length) }
+  }
+  if (variable.startsWith('font-size-')) {
+    return { type: 'fontSize', name: variable.slice('font-size-'.length) }
+  }
+  if (variable.startsWith('line-height-')) {
+    return { type: 'lineHeight', name: variable.slice('line-height-'.length) }
+  }
+  if (variable.startsWith('letter-spacing-')) {
+    return { type: 'letterSpacing', name: variable.slice('letter-spacing-'.length) }
   }
   return null
 }
@@ -462,8 +502,21 @@ function parseTokenRawValue(type: TokenType, raw: string): string | number {
   if (type === 'color' || type === 'fontFamily') {
     return clean
   }
-  // Strip px, rem, etc.
-  const num = parseFloat(clean.replace(/px|rem|em|pt/, ''))
+  // Handle rem and em units (1rem = 16px)
+  if (clean.endsWith('rem')) {
+    const num = parseFloat(clean)
+    return Number.isNaN(num) ? (TOKEN_META[type].defaultValue as number) : Math.round(num * 16 * 100) / 100
+  }
+  // Handle elevation shadow strings like "0px 4px 8px rgba(0,0,0,0.15)"
+  if (type === 'elevation' && clean.includes('px')) {
+    const pxMatches = clean.match(/-?\d+(?:\.\d+)?px/g)
+    if (pxMatches && pxMatches.length >= 2) {
+      const yVal = parseFloat(pxMatches[1])
+      if (!Number.isNaN(yVal)) return Math.abs(yVal)
+    }
+  }
+  // Strip px, em, pt, etc.
+  const num = parseFloat(clean.replace(/px|em|pt/, ''))
   return Number.isNaN(num) ? (TOKEN_META[type].defaultValue as number) : num
 }
 

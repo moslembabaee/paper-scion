@@ -154,7 +154,7 @@ export function setupFoundationDesignSystem(store: SceneStore): { addedCount: nu
 
   for (const mode of requiredModes) {
     if (!existingThemes.has(mode.id)) {
-      store.addTheme(mode.name)
+      store.addTheme(mode.name, mode.id)
       themesCreated++
     }
   }
