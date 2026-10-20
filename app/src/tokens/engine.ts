@@ -131,6 +131,7 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
 
   const colors = tokens.filter(t => t.type === 'color')
   const radii = tokens.filter(t => t.type === 'radius')
+  const elevations = tokens.filter(t => t.type === 'elevation')
   const fontSizes = tokens.filter(t => t.type === 'fontSize')
   const fontFamilies = tokens.filter(t => t.type === 'fontFamily')
   const fontWeights = tokens.filter(t => t.type === 'fontWeight')
@@ -215,6 +216,16 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
             matchedTokens.add(match.name)
             boundCount++
           }
+        }
+      }
+
+      // 5. Elevation shadow
+      if (!bindings.shadow && node.style.shadow && typeof node.style.shadow.y === 'number') {
+        const match = elevations.find(e => e.value === node.style.shadow?.y)
+        if (match) {
+          store.bindToken(node.id, 'shadow', match.id)
+          matchedTokens.add(match.name)
+          boundCount++
         }
       }
     }

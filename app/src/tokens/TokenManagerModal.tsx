@@ -64,6 +64,107 @@ const CHIP_TYPES: Record<FilterChip, TokenType[] | null> = {
   layout: ['container', 'breakpoint'],
 }
 
+function TokenPreviewSwatch({ token, size = 20 }: { token: { type: TokenType; value: string | number }; size?: number }) {
+  if (token.type === 'color') {
+    return (
+      <div
+        className="token-matrix-swatch"
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: String(token.value),
+          border: '1px solid var(--paper-border-strong)',
+          borderRadius: 4,
+          flexShrink: 0,
+        }}
+        title={`Color: ${token.value}`}
+      />
+    )
+  }
+  if (token.type === 'radius') {
+    const r = Math.min(Number(token.value) || 0, size / 2)
+    return (
+      <div
+        className="token-matrix-swatch"
+        style={{
+          width: size,
+          height: size,
+          border: '1.5px solid var(--paper-text)',
+          borderRadius: `${r}px`,
+          background: 'var(--paper-hover)',
+          flexShrink: 0,
+        }}
+        title={`Corner radius: ${token.value}px`}
+      />
+    )
+  }
+  if (token.type === 'elevation') {
+    const elev = Number(token.value) || 0
+    return (
+      <div
+        className="token-matrix-swatch"
+        style={{
+          width: size,
+          height: size,
+          background: 'var(--paper-surface)',
+          borderRadius: 3,
+          boxShadow: elev === 0 ? 'none' : `0 ${Math.min(elev, 5)}px ${Math.min(elev * 2, 10)}px rgba(0,0,0,0.3)`,
+          border: '1px solid var(--paper-border)',
+          flexShrink: 0,
+        }}
+        title={`Elevation shadow: ${token.value}px`}
+      />
+    )
+  }
+  if (token.type === 'spacing') {
+    return (
+      <div
+        className="token-matrix-swatch"
+        style={{
+          width: size,
+          height: size,
+          background: 'var(--paper-input)',
+          border: '1px solid var(--paper-border)',
+          borderRadius: 3,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 9,
+          fontFamily: 'var(--font-mono)',
+          color: 'var(--paper-text-muted)',
+          flexShrink: 0,
+        }}
+        title={`Spacing: ${token.value}px`}
+      >
+        <span>{token.value}</span>
+      </div>
+    )
+  }
+  return (
+    <div
+      className="token-matrix-swatch"
+      style={{
+        width: size,
+        height: size,
+        background: 'var(--paper-input)',
+        border: '1px solid var(--paper-border)',
+        borderRadius: 3,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: token.type === 'fontSize' ? 10 : 9,
+        fontWeight: token.type === 'fontWeight' ? (Number(token.value) || 600) : 600,
+        fontFamily: token.type === 'fontFamily' ? String(token.value) : 'var(--font-mono)',
+        color: 'var(--paper-text)',
+        flexShrink: 0,
+      }}
+      title={`${token.type}: ${token.value}`}
+    >
+      <span>{['fontSize', 'fontFamily', 'fontWeight'].includes(token.type) ? 'Ag' : TOKEN_META[token.type].namespace.slice(0, 3)}</span>
+    </div>
+  )
+}
+
 export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: TokenManagerModalProps) {
   const snapshot = useScene(store, state => state)
   const { tokens, styleLibrary, elements, selection } = snapshot
@@ -551,17 +652,7 @@ export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: Tok
                         {/* Token name & variable code */}
                         <td>
                           <div className="token-matrix-name-cell">
-                            {isColor ? (
-                              <div
-                                className="token-matrix-swatch"
-                                style={{ backgroundColor: String(token.value) }}
-                                title={String(token.value)}
-                              />
-                            ) : (
-                              <div className="token-matrix-swatch">
-                                <span style={{ fontSize: 9 }}>{TOKEN_META[token.type].namespace.slice(0, 3)}</span>
-                              </div>
-                            )}
+                            <TokenPreviewSwatch token={token} size={20} />
                             <div className="token-matrix-name-info">
                               <span className="token-name-label">{token.name}</span>
                               <span className="token-variable-code">{tokenVariable(token)}</span>
@@ -718,7 +809,6 @@ export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: Tok
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
               {filteredMatrix.map(row => {
                 const { token, boundCount } = row
-                const isColor = token.type === 'color'
 
                 return (
                   <div
@@ -735,34 +825,7 @@ export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: Tok
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {isColor ? (
-                          <div
-                            style={{
-                              width: 22,
-                              height: 22,
-                              borderRadius: 4,
-                              background: String(token.value),
-                              border: '1px solid var(--paper-border)',
-                            }}
-                          />
-                        ) : (
-                          <div
-                            style={{
-                              width: 22,
-                              height: 22,
-                              borderRadius: 4,
-                              background: 'var(--paper-input)',
-                              border: '1px solid var(--paper-border)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: 9,
-                              fontFamily: 'var(--font-mono)',
-                            }}
-                          >
-                            {TOKEN_META[token.type].namespace.slice(0, 3)}
-                          </div>
-                        )}
+                        <TokenPreviewSwatch token={token} size={24} />
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>{token.name}</div>
                           <div style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--paper-text-muted)' }}>
@@ -995,6 +1058,51 @@ export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: Tok
                     </div>
                   )}
 
+                  {/* Elevation Shadow binding */}
+                  <div className="binding-prop-row">
+                    <div className="binding-prop-name">Elevation Shadow</div>
+                    <div className="binding-prop-current">
+                      {selectedElement.tokenBindings?.shadow
+                        ? `${tokens.find(t => t.id === selectedElement.tokenBindings?.shadow)?.name ?? 'Bound'} (${selectedElement.style?.shadow?.y ?? 0}px)`
+                        : selectedElement.style?.shadow
+                          ? `${selectedElement.style.shadow.y}px (blur ${selectedElement.style.shadow.blur}px)`
+                          : 'None'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <select
+                        className="token-alias-select"
+                        value={selectedElement.tokenBindings?.shadow ?? ''}
+                        onChange={e => {
+                          if (e.target.value) store.bindToken(selectedElement.id, 'shadow', e.target.value)
+                          else store.detachToken(selectedElement.id, 'shadow')
+                        }}
+                      >
+                        <option value="">{selectedElement.tokenBindings?.shadow ? 'Bound (choose to change)' : 'Unbound'}</option>
+                        {tokens.filter(t => t.type === 'elevation').map(t => (
+                          <option key={t.id} value={t.id}>{t.name} ({t.value}px)</option>
+                        ))}
+                      </select>
+                      {!selectedElement.tokenBindings?.shadow && selectedElement.style?.shadow && (
+                        <button
+                          type="button"
+                          className="token-row-btn"
+                          title="Extract as new elevation token"
+                          onClick={() => {
+                            const val = selectedElement.style?.shadow?.y ?? 4
+                            let name = 'elevation-custom'
+                            let index = 1
+                            while (tokens.some(t => t.type === 'elevation' && t.name === name)) name = `elevation-custom-${index++}`
+                            const added = store.addToken({ type: 'elevation', name, value: val })
+                            store.bindToken(selectedElement.id, 'shadow', added.id)
+                            showToast(`Created and bound elevation token: ${added.name}`)
+                          }}
+                        >
+                          <Plus size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Typography for text elements */}
                   {selectedElement.type === 'text' && (
                     <>
@@ -1046,6 +1154,66 @@ export function TokenManagerModal({ store, onClose, initialTab = 'matrix' }: Tok
                             <option value="">{selectedElement.tokenBindings?.fontFamily ? 'Bound' : 'Unbound'}</option>
                             {tokens.filter(t => t.type === 'fontFamily').map(t => (
                               <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="binding-prop-row">
+                        <div className="binding-prop-name">Font Weight</div>
+                        <div className="binding-prop-current">{selectedElement.fontWeight}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <select
+                            className="token-alias-select"
+                            value={selectedElement.tokenBindings?.fontWeight ?? ''}
+                            onChange={e => {
+                              if (e.target.value) store.bindToken(selectedElement.id, 'fontWeight', e.target.value)
+                              else store.detachToken(selectedElement.id, 'fontWeight')
+                            }}
+                          >
+                            <option value="">{selectedElement.tokenBindings?.fontWeight ? 'Bound' : 'Unbound'}</option>
+                            {tokens.filter(t => t.type === 'fontWeight').map(t => (
+                              <option key={t.id} value={t.id}>{t.name} ({t.value})</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="binding-prop-row">
+                        <div className="binding-prop-name">Line Height</div>
+                        <div className="binding-prop-current">{selectedElement.lineHeight}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <select
+                            className="token-alias-select"
+                            value={selectedElement.tokenBindings?.lineHeight ?? ''}
+                            onChange={e => {
+                              if (e.target.value) store.bindToken(selectedElement.id, 'lineHeight', e.target.value)
+                              else store.detachToken(selectedElement.id, 'lineHeight')
+                            }}
+                          >
+                            <option value="">{selectedElement.tokenBindings?.lineHeight ? 'Bound' : 'Unbound'}</option>
+                            {tokens.filter(t => t.type === 'lineHeight').map(t => (
+                              <option key={t.id} value={t.id}>{t.name} ({t.value})</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="binding-prop-row">
+                        <div className="binding-prop-name">Letter Spacing</div>
+                        <div className="binding-prop-current">{selectedElement.letterSpacing}px</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <select
+                            className="token-alias-select"
+                            value={selectedElement.tokenBindings?.letterSpacing ?? ''}
+                            onChange={e => {
+                              if (e.target.value) store.bindToken(selectedElement.id, 'letterSpacing', e.target.value)
+                              else store.detachToken(selectedElement.id, 'letterSpacing')
+                            }}
+                          >
+                            <option value="">{selectedElement.tokenBindings?.letterSpacing ? 'Bound' : 'Unbound'}</option>
+                            {tokens.filter(t => t.type === 'letterSpacing').map(t => (
+                              <option key={t.id} value={t.id}>{t.name} ({t.value}px)</option>
                             ))}
                           </select>
                         </div>
