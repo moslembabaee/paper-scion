@@ -132,16 +132,28 @@ export function ComponentVariantMatrixEditor({
         </div>
         <div className="component-heading-actions">
           {dimensions.length > 0 && (
-            <button
-              className="quiet-button matrix-generate-btn"
-              disabled={disabled}
-              title="Generate 2D matrix grid of instances on canvas (aligned to 120px grid)"
-              aria-label="Generate matrix on canvas"
-              onClick={handleGenerateOnCanvas}
-            >
-              <LayoutGrid size={13} />
-              <span>Canvas Grid</span>
-            </button>
+            <>
+              <button
+                className="quiet-button matrix-generate-btn"
+                disabled={disabled}
+                title="Populate combination cells for all defined dimensions"
+                aria-label="Populate matrix combinations"
+                onClick={() => perform(() => store.populateVariantMatrixCombinations(master.id))}
+              >
+                <Sparkles size={13} />
+                <span>Populate Cells</span>
+              </button>
+              <button
+                className="quiet-button matrix-generate-btn"
+                disabled={disabled}
+                title="Generate 2D matrix grid of instances on canvas (aligned to 120px grid)"
+                aria-label="Generate matrix on canvas"
+                onClick={handleGenerateOnCanvas}
+              >
+                <LayoutGrid size={13} />
+                <span>Canvas Grid</span>
+              </button>
+            </>
           )}
           <button
             className="quiet-button"

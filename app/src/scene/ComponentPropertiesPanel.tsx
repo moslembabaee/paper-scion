@@ -558,7 +558,7 @@ export function ComponentPropertiesPanel({
                     disabled={disabled || store.isLocked(master.id)}
                     aria-label={`Push ${dim.name} to master`}
                     title={`Push "${dim.name}" override back to master default`}
-                    onClick={() => perform(() => store.updateVariantDimension(master.id, dim.id, { defaultValue: String(dimVal) }))}
+                    onClick={() => perform(() => store.pushComponentPropertyToMaster(root.id, dim.id))}
                   >
                     <Upload size={11} />
                   </button>
