@@ -124,10 +124,14 @@ def handle_completed_agent(agent):
         log(f"PR merge result: code={m_code}, output={m_out or m_err}")
         deploy_now()
 
-    if issue_num:
-        log(f"Closing GitHub Issue #{issue_num}...")
-        run_cmd(["gh", "issue", "close", str(issue_num), "-R", REPO, "-c", f"Resolved and deployed by Scion agent `{name}`."])
-        run_cmd(["gh", "issue", "edit", str(issue_num), "-R", REPO, "--remove-label", "in-progress"])
+        if issue_num:
+            log(f"Closing GitHub Issue #{issue_num}...")
+            run_cmd(["gh", "issue", "close", str(issue_num), "-R", REPO, "-c", f"Resolved and deployed by Scion agent `{name}`."])
+            run_cmd(["gh", "issue", "edit", str(issue_num), "-R", REPO, "--remove-label", "in-progress"])
+    else:
+        log(f"⚠️ Agent '{name}' exited without creating a PR for issue #{issue_num}.")
+        if issue_num:
+            run_cmd(["gh", "issue", "edit", str(issue_num), "-R", REPO, "--remove-label", "in-progress"])
 
     log(f"Cleaning up completed Scion agent '{name}'...")
     run_cmd(["scion", "delete", name, "--yes"])
@@ -178,16 +182,29 @@ Engineering Rules (from AGENTS.md & LESSONS.md):
 
 def step():
     agents = get_scion_agents()
-    active_agents = [a for a in agents if a.get("phase") not in ("deleted", "none")]
+    # Filter out long-running consultative agents (like architect) from pipeline task handling
+    active_agents = [
+        a for a in agents 
+        if a.get("phase") not in ("deleted", "none") 
+        and not a.get("name", "").startswith("architect")
+    ]
 
     if active_agents:
         agent = active_agents[0]
         phase = agent.get("phase", "")
+        activity = agent.get("activity", "")
         name = agent.get("name", "")
-        if phase in ("completed", "stopped", "failed"):
+        container_status = agent.get("containerStatus", "")
+
+        is_terminal = (
+            phase in ("completed", "stopped", "failed", "error")
+            or activity in ("completed", "limits_exceeded", "stalled", "offline")
+            or container_status.startswith("Exited")
+        )
+        if is_terminal:
             handle_completed_agent(agent)
         else:
-            log(f"Active agent running: '{name}' (phase: {phase}). Supervising...")
+            log(f"Active agent running: '{name}' (phase: {phase}, activity: {activity}, container: {container_status}). Supervising...")
         return
 
     # No agent running -> check if there's any pending deployment
