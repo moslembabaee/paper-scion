@@ -27,6 +27,7 @@ import {
   cleanSvgPathGeometry,
   exportCleanSVGGeometry,
   generateCompoundClipPath,
+  generateCssClipPath,
 } from './cagEngine'
 import type { SceneStore } from './store'
 import { useScene } from './useScene'
@@ -221,16 +222,28 @@ function CompoundPreview({
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {viewMode === 'clip' ? (
-            <button
-              type="button"
-              className="cag-copy-btn"
-              onClick={() => handleCopy(clipMarkup, 'clip')}
-              title="Copy SVG <clipPath> definition to clipboard"
-              aria-label="Copy SVG clip path"
-            >
-              {copied === 'clip' ? <Check size={10} color="#81adec" /> : <Copy size={10} />}
-              <span>{copied === 'clip' ? 'COPIED' : 'COPY CLIP'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className="cag-copy-btn"
+                onClick={() => handleCopy(clipMarkup, 'clip')}
+                title="Copy SVG <clipPath> definition to clipboard"
+                aria-label="Copy SVG clip path"
+              >
+                {copied === 'clip' ? <Check size={10} color="#81adec" /> : <Copy size={10} />}
+                <span>{copied === 'clip' ? 'COPIED' : 'COPY CLIP'}</span>
+              </button>
+              <button
+                type="button"
+                className="cag-copy-btn"
+                onClick={() => handleCopy(generateCssClipPath(compound, { precision: 4 }), 'css-clip')}
+                title="Copy CSS clip-path: path(...) to clipboard"
+                aria-label="Copy CSS clip path"
+              >
+                {copied === 'css-clip' ? <Check size={10} color="#81adec" /> : <Scissors size={10} />}
+                <span>{copied === 'css-clip' ? 'COPIED' : 'CSS CLIP'}</span>
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -390,6 +403,11 @@ function SourceEditor({
   onUnwrap,
   onChangeNestedOp,
   onEditAnchors,
+  onMoveNested,
+  onToggleMuteNested,
+  onDuplicateNested,
+  onRemoveNested,
+  onEditAnchorsNested,
 }: {
   source: VectorElement
   index: number
@@ -409,6 +427,11 @@ function SourceEditor({
   onUnwrap?: () => void
   onChangeNestedOp?: (op: BooleanOperation) => void
   onEditAnchors?: () => void
+  onMoveNested?: (subId: string, direction: -1 | 1) => void
+  onToggleMuteNested?: (subId: string) => void
+  onDuplicateNested?: (subId: string) => void
+  onRemoveNested?: (subId: string) => void
+  onEditAnchorsNested?: (subId: string) => void
 }) {
   const fields = [
     ['x', 'X'],
@@ -565,15 +588,102 @@ function SourceEditor({
             <span className="section-caption">
               NESTED {source.boolean!.operation.toUpperCase()} ({source.boolean!.operands.length} OPERANDS)
             </span>
-            {source.boolean!.operands.map((sub, subIdx) => (
-              <div key={sub.id} className="boolean-nested-row">
-                <span>{sub.type === 'ellipse' ? '○' : sub.type === 'rectangle' ? '□' : '◇'}</span>
-                <span>{sub.name}</span>
-                <span className="boolean-nested-badge">
-                  #{subIdx + 1} {sub.type}
-                </span>
-              </div>
-            ))}
+            {source.boolean!.operands.map((sub, subIdx, allSubs) => {
+              const isSubMuted = source.boolean!.mutedOperandIds?.includes(sub.id) ?? false
+              return (
+                <div key={sub.id} className="boolean-nested-row">
+                  <span>{sub.type === 'ellipse' ? '○' : sub.type === 'rectangle' ? '□' : '◇'}</span>
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</span>
+                  <span className="boolean-nested-badge">
+                    #{subIdx + 1} {sub.type}
+                  </span>
+                  {onMoveNested && (
+                    <div style={{ display: 'flex', gap: 2, marginLeft: 'auto' }}>
+                      <button
+                        type="button"
+                        className="shape-tree-btn"
+                        disabled={disabled || subIdx === 0}
+                        title="Move nested operand earlier"
+                        onClick={e => {
+                          e.stopPropagation()
+                          onMoveNested(sub.id, -1)
+                        }}
+                      >
+                        <ArrowUp size={8} />
+                      </button>
+                      <button
+                        type="button"
+                        className="shape-tree-btn"
+                        disabled={disabled || subIdx === allSubs.length - 1}
+                        title="Move nested operand later"
+                        onClick={e => {
+                          e.stopPropagation()
+                          onMoveNested(sub.id, 1)
+                        }}
+                      >
+                        <ArrowDown size={8} />
+                      </button>
+                    </div>
+                  )}
+                  {onToggleMuteNested && (
+                    <button
+                      type="button"
+                      className={`shape-tree-btn ${isSubMuted ? 'is-muted' : ''}`}
+                      disabled={disabled}
+                      title={isSubMuted ? 'Unmute nested operand' : 'Mute nested operand'}
+                      onClick={e => {
+                        e.stopPropagation()
+                        onToggleMuteNested(sub.id)
+                      }}
+                    >
+                      {isSubMuted ? <EyeOff size={8} /> : <Eye size={8} />}
+                    </button>
+                  )}
+                  {onEditAnchorsNested && (
+                    <button
+                      type="button"
+                      className="shape-tree-btn"
+                      disabled={disabled}
+                      title="Edit anchors of nested operand on canvas"
+                      onClick={e => {
+                        e.stopPropagation()
+                        onEditAnchorsNested(sub.id)
+                      }}
+                    >
+                      <PenTool size={8} />
+                    </button>
+                  )}
+                  {onDuplicateNested && (
+                    <button
+                      type="button"
+                      className="shape-tree-btn"
+                      disabled={disabled}
+                      title="Duplicate nested operand"
+                      onClick={e => {
+                        e.stopPropagation()
+                        onDuplicateNested(sub.id)
+                      }}
+                    >
+                      <Copy size={8} />
+                    </button>
+                  )}
+                  {onRemoveNested && allSubs.length > 2 && (
+                    <button
+                      type="button"
+                      className="shape-tree-btn is-delete"
+                      disabled={disabled}
+                      title="Remove nested operand"
+                      onClick={e => {
+                        e.stopPropagation()
+                        onRemoveNested(sub.id)
+                      }}
+                    >
+                      <Trash2 size={8} />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </>
       )}
@@ -877,6 +987,14 @@ export function BooleanBar({ store }: { store: SceneStore }) {
                       : undefined
                   }
                   onChange={patch => run(() => store.updateBooleanOperand(compound.id, source.id, patch))}
+                  onMoveNested={(subId, direction) => run(() => store.moveBooleanOperand(compound.id, subId, direction))}
+                  onToggleMuteNested={subId => run(() => store.toggleBooleanOperandMute(compound.id, subId))}
+                  onDuplicateNested={subId => run(() => store.duplicateBooleanOperand(compound.id, subId))}
+                  onRemoveNested={subId => run(() => store.removeBooleanOperand(compound.id, subId))}
+                  onEditAnchorsNested={subId => {
+                    store.setSelectedCompoundOperand({ compoundId: compound.id, operandId: subId })
+                    store.setPathEditingTarget({ id: compound.id, operandId: subId })
+                  }}
                   onMove={direction =>
                     run(() => {
                       const order = sources.map(operand => operand.id)

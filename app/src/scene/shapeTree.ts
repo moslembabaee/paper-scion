@@ -232,6 +232,119 @@ export function reorderTreeChildren(
 }
 
 /**
+ * Moves a node earlier (-1) or later (+1) among its siblings in its parent compound.
+ */
+export function moveTreeNode(
+  root: ShapeTreeNode,
+  targetId: string,
+  direction: -1 | 1
+): ShapeTreeNode {
+  function visit(node: ShapeTreeNode): ShapeTreeNode {
+    if (node.type !== 'compound' || !node.operands) return node
+    const idx = node.operands.findIndex(c => c.id === targetId)
+    if (idx !== -1) {
+      const targetIdx = idx + direction
+      if (targetIdx < 0 || targetIdx >= node.operands.length) return node
+      const nextOperands = [...node.operands]
+      const temp = nextOperands[idx]
+      nextOperands[idx] = nextOperands[targetIdx]
+      nextOperands[targetIdx] = temp
+      return { ...node, operands: nextOperands }
+    }
+    const updatedOperands = node.operands.map(visit)
+    return { ...node, operands: updatedOperands }
+  }
+  return visit(root)
+}
+
+/**
+ * Updates the boolean operation for a specific compound node in the tree.
+ */
+export function setTreeNodeOperation(
+  root: ShapeTreeNode,
+  targetCompoundId: string,
+  operation: BooleanOperation
+): ShapeTreeNode {
+  return updateTreeNode(root, targetCompoundId, node => {
+    if (node.type !== 'compound') return node
+    return { ...node, operation }
+  })
+}
+
+/**
+ * Updates properties (parameters) of a node within the shape tree.
+ */
+export function updateTreeNodeParameters(
+  root: ShapeTreeNode,
+  targetId: string,
+  patch: Record<string, unknown>
+): ShapeTreeNode {
+  return updateTreeNode(root, targetId, node => {
+    if (!node.element) return node
+    const updatedElement = {
+      ...node.element,
+      ...patch,
+      ...(patch.style ? { style: { ...node.element.style, ...(patch.style as Record<string, unknown>) } } : {}),
+    } as VectorElement
+    return {
+      ...node,
+      name: typeof patch.name === 'string' ? patch.name : node.name,
+      element: updatedElement,
+    }
+  })
+}
+
+export interface CompoundHierarchyInspection {
+  readonly id: string
+  readonly name: string
+  readonly isCompound: boolean
+  readonly operation?: BooleanOperation
+  readonly totalLeafCount: number
+  readonly maxDepth: number
+  readonly directOperandCount: number
+  readonly activeOperandCount: number
+  readonly mutedOperandCount: number
+  readonly operationsUsed: readonly BooleanOperation[]
+  readonly tree: ShapeTreeNode
+}
+
+/**
+ * Computes deep diagnostic metrics for a compound shape hierarchy.
+ */
+export function inspectCompoundHierarchy(element: VectorElement): CompoundHierarchyInspection {
+  const tree = buildShapeTree(element)
+  const isCompound = element.type === 'path' && !!element.boolean
+  const operations = new Set<BooleanOperation>()
+  let maxDepth = 0
+
+  function scan(node: ShapeTreeNode) {
+    maxDepth = Math.max(maxDepth, node.depth)
+    if (node.operation) operations.add(node.operation)
+    if (node.operands) {
+      for (const child of node.operands) scan(child)
+    }
+  }
+  scan(tree)
+
+  const directOperands = tree.operands ?? []
+  const mutedCount = directOperands.filter(o => o.muted).length
+
+  return {
+    id: element.id,
+    name: element.name,
+    isCompound,
+    operation: isCompound ? element.boolean!.operation : undefined,
+    totalLeafCount: countTreeLeaves(tree),
+    maxDepth,
+    directOperandCount: directOperands.length,
+    activeOperandCount: directOperands.length - mutedCount,
+    mutedOperandCount: mutedCount,
+    operationsUsed: Array.from(operations),
+    tree,
+  }
+}
+
+/**
  * Evaluates a ShapeTreeNode hierarchy non-destructively.
  * Skips muted nodes and recursively evaluates child compounds.
  */

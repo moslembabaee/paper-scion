@@ -516,6 +516,10 @@ export interface CleanSVGExportOptions {
   stroke?: string
   /** Stroke width override */
   strokeWidth?: number
+  /** If true, includes <clipPath> definition in <defs> */
+  includeClipPath?: boolean
+  /** If true, includes non-destructive hierarchy markup */
+  includeHierarchy?: boolean
 }
 
 /**
@@ -548,17 +552,45 @@ export function exportCleanSVGGeometry(
   ].join('\n')
 }
 
+export interface CompoundClipPathOptions {
+  clipPathId?: string
+  precision?: number
+  clipPathUnits?: 'userSpaceOnUse' | 'objectBoundingBox'
+  clipRule?: 'nonzero' | 'evenodd'
+  transform?: string
+}
+
 /**
  * Generates an SVG <clipPath> definition containing the compound shape's precise path geometry.
  */
 export function generateCompoundClipPath(
   element: PathElement,
-  options: { clipPathId?: string; precision?: number } = {}
+  options: CompoundClipPathOptions = {}
 ): string {
   const clipId = options.clipPathId || `clip-${element.id}`
   const d = cleanSvgPathGeometry(element.d, { precision: options.precision ?? 4 })
-  const fillRule = element.fillRule ?? 'nonzero'
-  return `<clipPath id="${clipId}" clipPathUnits="userSpaceOnUse">\n  <path d="${d}" fill-rule="${fillRule}" clip-rule="${fillRule}"/>\n</clipPath>`
+  const fillRule = options.clipRule ?? element.fillRule ?? 'nonzero'
+  const units = options.clipPathUnits ?? 'userSpaceOnUse'
+  const transformAttr = options.transform ? ` transform="${options.transform}"` : ''
+  return `<clipPath id="${clipId}" clipPathUnits="${units}">\n  <path d="${d}" fill-rule="${fillRule}" clip-rule="${fillRule}"${transformAttr}/>\n</clipPath>`
+}
+
+/**
+ * Generates clean, optimized SVG path data string (d attribute) for a compound shape.
+ */
+export function generateCompoundClipPathData(
+  element: PathElement,
+  options: { precision?: number } = {}
+): string {
+  return cleanSvgPathGeometry(element.d, { precision: options.precision ?? 4 })
+}
+
+export interface CompoundSVGMaskOptions {
+  maskId?: string
+  precision?: number
+  mode?: 'alpha' | 'luminance'
+  inverted?: boolean
+  opacity?: number
 }
 
 /**
@@ -566,12 +598,60 @@ export function generateCompoundClipPath(
  */
 export function generateCompoundSVGMask(
   element: PathElement,
-  options: { maskId?: string; precision?: number } = {}
+  options: CompoundSVGMaskOptions = {}
 ): string {
   const maskId = options.maskId || `mask-${element.id}`
   const d = cleanSvgPathGeometry(element.d, { precision: options.precision ?? 4 })
   const fillRule = element.fillRule ?? 'nonzero'
-  return `<mask id="${maskId}" maskUnits="userSpaceOnUse">\n  <path d="${d}" fill="#ffffff" fill-rule="${fillRule}"/>\n</mask>`
+  const opacity = options.opacity !== undefined ? ` opacity="${options.opacity}"` : ''
+  const isLuminance = options.mode === 'luminance'
+  const fill = options.inverted ? '#000000' : '#ffffff'
+  const bg = options.inverted ? `  <rect width="100%" height="100%" fill="#ffffff"/>\n` : ''
+  const maskTypeAttr = isLuminance ? ' mask-type="luminance"' : ''
+
+  return `<mask id="${maskId}" maskUnits="userSpaceOnUse"${maskTypeAttr}>\n${bg}  <path d="${d}" fill="${fill}" fill-rule="${fillRule}"${opacity}/>\n</mask>`
+}
+
+/**
+ * Fully renders a compound shape as an exported SVG string, with optional embedded
+ * clipPaths, masks, and non-destructive hierarchy metadata.
+ */
+export function exportCompoundAsSVG(
+  element: PathElement,
+  options: CleanSVGExportOptions = {}
+): string {
+  const precision = options.precision ?? 4
+  const d = cleanSvgPathGeometry(element.d, { precision })
+  const [vx, vy, vw, vh] = element.viewBox ?? [0, 0, element.width, element.height]
+  const fillRule = element.fillRule ?? 'nonzero'
+  const fill = options.fill ?? element.style.fill ?? '#81adec'
+  const stroke = options.stroke ?? element.style.stroke?.color ?? 'none'
+  const strokeWidth = options.strokeWidth ?? element.style.stroke?.width ?? 0
+  const strokeAttr = stroke && stroke !== 'none' ? ` stroke="${stroke}" stroke-width="${strokeWidth}"` : ''
+
+  const defsEntries: string[] = []
+  if (options.includeClipPath) {
+    defsEntries.push(generateCompoundClipPath(element, { clipPathId: `clip-${element.id}`, precision }))
+  }
+
+  const defsBlock = defsEntries.length > 0 ? `  <defs>\n    ${defsEntries.join('\n    ')}\n  </defs>\n` : ''
+  const hierarchyBlock = options.includeHierarchy && element.boolean
+    ? `  <!-- Non-destructive compound hierarchy -->\n${generateCompoundHierarchyMarkup(element, { precision, indent: '  ' })}\n`
+    : ''
+
+  const pathMarkup = `<path id="${element.id}" d="${d}" fill="${fill}" fill-rule="${fillRule}"${strokeAttr}/>`
+
+  if (!options.standalone) {
+    return pathMarkup
+  }
+
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vx} ${vy} ${vw} ${vh}" width="${vw}" height="${vh}" data-compound-op="${element.boolean?.operation ?? 'none'}">`,
+    defsBlock ? defsBlock.trimEnd() : null,
+    hierarchyBlock ? hierarchyBlock.trimEnd() : null,
+    `  ${pathMarkup}`,
+    `</svg>`,
+  ].filter(Boolean).join('\n')
 }
 
 /**
