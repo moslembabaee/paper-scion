@@ -3884,7 +3884,7 @@ export class SceneStore {
     return this.state.tokens.slice(-tokens.length)
   }
 
-  updateToken(id: string, patch: { name?: string; value?: string | number; aliasId?: string; themeValues?: Readonly<Record<string, string | number>>; palette?: string }): void {
+  updateToken(id: string, patch: { name?: string; value?: string | number; aliasId?: string; themeValues?: Readonly<Record<string, string | number>>; themeAliases?: Readonly<Record<string, string>>; palette?: string }): void {
     const token = this.state.tokens.find(candidate => candidate.id === id)
     if (!token) throw new Error('Unknown token')
     const next = { ...token, ...patch } as DesignToken
@@ -3918,10 +3918,28 @@ export class SceneStore {
     const resolved = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId)
     const lookup = new Map(resolved.map(token => [token.id, token]))
     const tokens = validateTokens(this.state.tokens.filter(token => !removed.has(token.id)).map(token => {
-      if (!token.aliasId || !removed.has(token.aliasId)) return token
-      const { aliasId, ...literal } = token; void aliasId
-      const themeValues = Object.fromEntries(this.state.styleLibrary.themes.map(theme => [theme.id, resolveTokens(this.state.tokens, theme.id).find(value => value.id === token.id)!.value]))
-      return { ...literal, value: resolveTokens(this.state.tokens).find(value => value.id === token.id)!.value, themeValues } as DesignToken
+      let nextToken = token
+      if (nextToken.aliasId && removed.has(nextToken.aliasId)) {
+        const { aliasId, ...literal } = nextToken; void aliasId
+        const themeValues = Object.fromEntries(this.state.styleLibrary.themes.map(theme => [theme.id, resolveTokens(this.state.tokens, theme.id).find(value => value.id === token.id)!.value]))
+        nextToken = { ...literal, value: resolveTokens(this.state.tokens).find(value => value.id === token.id)!.value, themeValues } as DesignToken
+      }
+      if (nextToken.themeAliases) {
+        let changed = false
+        const themeAliases: Record<string, string> = {}
+        for (const [tId, targetId] of Object.entries(nextToken.themeAliases)) {
+          if (removed.has(targetId)) {
+            changed = true
+          } else {
+            themeAliases[tId] = targetId
+          }
+        }
+        if (changed) {
+          const { themeAliases: _, ...withoutAliases } = nextToken; void _
+          nextToken = { ...withoutAliases, ...(Object.keys(themeAliases).length ? { themeAliases } : {}) } as DesignToken
+        }
+      }
+      return nextToken
     }))
     const styles = this.state.styleLibrary.styles.map(style => {
       if (style.kind === 'color' && style.tokenId && removed.has(style.tokenId)) {
@@ -3989,10 +4007,18 @@ export class SceneStore {
     this.publish(Object.freeze({ ...this.state, tokens, styleLibrary, elements: Object.freeze(elements) }), label)
   }
 
-  addTheme(name: string): string {
-    const id = crypto.randomUUID()
+  addTheme(name: string, customId?: string): string {
+    const id = customId ?? crypto.randomUUID()
     this.setDesignSystem(this.state.tokens, { ...this.state.styleLibrary, themes: [...this.state.styleLibrary.themes, { id, name }] }, 'Add theme')
     return id
+  }
+
+  renameTheme(id: string, name: string): void {
+    const library = this.state.styleLibrary
+    const theme = library.themes.find(t => t.id === id)
+    if (!theme) throw new Error('Unknown theme')
+    if (theme.name === name) return
+    this.setDesignSystem(this.state.tokens, { ...library, themes: library.themes.map(t => t.id === id ? { ...t, name } : t) }, `Rename ${theme.name} theme`)
   }
 
   setActiveTheme(id: string | null): void {
@@ -4002,8 +4028,16 @@ export class SceneStore {
 
   removeTheme(id: string): void {
     const tokens = this.state.tokens.map(token => {
-      const themeValues: Record<string, string | number> = { ...token.themeValues }; delete themeValues[id]
-      return { ...token, ...(token.themeValues ? { themeValues } : {}) } as DesignToken
+      const themeValues: Record<string, string | number> = { ...token.themeValues }
+      delete themeValues[id]
+      const themeAliases: Record<string, string> = { ...token.themeAliases }
+      delete themeAliases[id]
+      const { themeValues: _v, themeAliases: _a, ...rest } = token; void _v; void _a
+      return {
+        ...rest,
+        ...(Object.keys(themeValues).length ? { themeValues } : {}),
+        ...(Object.keys(themeAliases).length ? { themeAliases } : {}),
+      } as DesignToken
     })
     const library = this.state.styleLibrary
     this.setDesignSystem(tokens, { ...library, themes: library.themes.filter(theme => theme.id !== id), activeThemeId: library.activeThemeId === id ? null : library.activeThemeId }, 'Delete theme')
@@ -4016,6 +4050,15 @@ export class SceneStore {
     const themeValues: Record<string, string | number> = { ...token.themeValues }
     if (value === undefined) delete themeValues[themeId]; else themeValues[themeId] = value
     this.updateToken(id, { themeValues })
+  }
+
+  setTokenThemeAlias(id: string, themeId: string, aliasTargetId: string | undefined): void {
+    const token = this.state.tokens.find(token => token.id === id)
+    if (!token) throw new Error('Unknown token')
+    if (!this.state.styleLibrary.themes.some(theme => theme.id === themeId)) throw new Error('Unknown theme')
+    const themeAliases: Record<string, string> = { ...token.themeAliases }
+    if (aliasTargetId === undefined || aliasTargetId === '') delete themeAliases[themeId]; else themeAliases[themeId] = aliasTargetId
+    this.updateToken(id, { themeAliases })
   }
 
   addSharedStyle(input: SharedStyleInput): SharedStyle {

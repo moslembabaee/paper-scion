@@ -1,4 +1,4 @@
-import type { SceneElement, ElementType } from '../scene/types.ts'
+import type { SceneElement } from '../scene/types.ts'
 import type { SceneStore } from '../scene/store.ts'
 import { resolveTokens } from './library.ts'
 import { tokenVariable, validateToken, TOKEN_META } from './model.ts'
@@ -44,15 +44,17 @@ export function switchThemeMode(store: SceneStore, themeId: string | null): void
 /**
  * Ensures standard design system modes (Light, Dark, High-Contrast) exist in the document.
  */
-export function ensureStandardModes(store: SceneStore): void {
+export function ensureStandardModes(store: SceneStore): readonly DesignTheme[] {
   const snapshot = store.getSnapshot()
-  const existingIds = new Set(snapshot.styleLibrary.themes.map(t => t.id))
+  const existingIds = new Set(snapshot.styleLibrary.themes.map(t => t.id.toLowerCase()))
 
   for (const standard of STANDARD_THEMES) {
-    if (!existingIds.has(standard.id)) {
-      store.addTheme(standard.name)
+    if (!existingIds.has(standard.id.toLowerCase())) {
+      store.addTheme(standard.name, standard.id)
+      existingIds.add(standard.id.toLowerCase())
     }
   }
+  return store.getSnapshot().styleLibrary.themes
 }
 
 /**
@@ -132,22 +134,22 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
   const fontSizes = tokens.filter(t => t.type === 'fontSize')
   const fontFamilies = tokens.filter(t => t.type === 'fontFamily')
   const fontWeights = tokens.filter(t => t.type === 'fontWeight')
+  const lineHeights = tokens.filter(t => t.type === 'lineHeight')
+  const letterSpacings = tokens.filter(t => t.type === 'letterSpacing')
 
   let boundCount = 0
   const matchedTokens = new Set<string>()
 
   store.batch(() => {
     for (const node of Object.values(elements)) {
-      const bindings = { ...(node.tokenBindings ?? {}) }
-      let updated = false
+      const bindings = node.tokenBindings ?? {}
 
       // 1. Fill color
       if (!bindings.fill && node.style.fill) {
         const match = colors.find(c => c.value.toLowerCase() === node.style.fill?.toLowerCase())
         if (match) {
-          bindings.fill = match.id
+          store.bindToken(node.id, 'fill', match.id)
           matchedTokens.add(match.name)
-          updated = true
           boundCount++
         }
       }
@@ -156,9 +158,8 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
       if (!bindings.stroke && node.style.stroke?.color) {
         const match = colors.find(c => c.value.toLowerCase() === node.style.stroke?.color.toLowerCase())
         if (match) {
-          bindings.stroke = match.id
+          store.bindToken(node.id, 'stroke', match.id)
           matchedTokens.add(match.name)
-          updated = true
           boundCount++
         }
       }
@@ -167,9 +168,8 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
       if (!bindings.cornerRadius && 'cornerRadius' in node && typeof node.cornerRadius === 'number') {
         const match = radii.find(r => r.value === node.cornerRadius)
         if (match) {
-          bindings.cornerRadius = match.id
+          store.bindToken(node.id, 'cornerRadius', match.id)
           matchedTokens.add(match.name)
-          updated = true
           boundCount++
         }
       }
@@ -179,34 +179,43 @@ export function autoBindMatchingNodes(store: SceneStore): { boundCount: number; 
         if (!bindings.fontSize && typeof node.fontSize === 'number') {
           const match = fontSizes.find(f => f.value === node.fontSize)
           if (match) {
-            bindings.fontSize = match.id
+            store.bindToken(node.id, 'fontSize', match.id)
             matchedTokens.add(match.name)
-            updated = true
             boundCount++
           }
         }
         if (!bindings.fontFamily && node.fontFamily) {
           const match = fontFamilies.find(f => f.value.toLowerCase() === node.fontFamily.toLowerCase())
           if (match) {
-            bindings.fontFamily = match.id
+            store.bindToken(node.id, 'fontFamily', match.id)
             matchedTokens.add(match.name)
-            updated = true
             boundCount++
           }
         }
         if (!bindings.fontWeight && typeof node.fontWeight === 'number') {
           const match = fontWeights.find(f => f.value === node.fontWeight)
           if (match) {
-            bindings.fontWeight = match.id
+            store.bindToken(node.id, 'fontWeight', match.id)
             matchedTokens.add(match.name)
-            updated = true
             boundCount++
           }
         }
-      }
-
-      if (updated) {
-        store.update(node.id, node.type as ElementType, { tokenBindings: bindings } as any)
+        if (!bindings.lineHeight && typeof node.lineHeight === 'number') {
+          const match = lineHeights.find(l => l.value === node.lineHeight)
+          if (match) {
+            store.bindToken(node.id, 'lineHeight', match.id)
+            matchedTokens.add(match.name)
+            boundCount++
+          }
+        }
+        if (!bindings.letterSpacing && typeof node.letterSpacing === 'number') {
+          const match = letterSpacings.find(l => l.value === node.letterSpacing)
+          if (match) {
+            store.bindToken(node.id, 'letterSpacing', match.id)
+            matchedTokens.add(match.name)
+            boundCount++
+          }
+        }
       }
     }
   })
@@ -245,6 +254,12 @@ export function createTokenFromNode(
   } else if (property === 'fontWeight' && node.type === 'text') {
     type = 'fontWeight'
     rawValue = node.fontWeight
+  } else if (property === 'lineHeight' && node.type === 'text') {
+    type = 'lineHeight'
+    rawValue = node.lineHeight
+  } else if (property === 'letterSpacing' && node.type === 'text') {
+    type = 'letterSpacing'
+    rawValue = node.letterSpacing
   } else if (property === 'width' || property === 'height' || property === 'x' || property === 'y') {
     type = 'spacing'
     rawValue = node[property]

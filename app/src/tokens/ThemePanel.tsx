@@ -4,12 +4,13 @@ import { StyleLibraryPanel } from './StyleLibraryPanel'
 import { resolveTokens } from './library'
 import { designSystemToCSS } from './libraryCodegen'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Plus, Search, Trash2, X } from 'lucide-react'
+import { Check, Copy, Plus, Search, Trash2, Variable, X } from 'lucide-react'
 import { Dialog } from '../workspace/Dialog'
 import type { SceneStore } from '../scene/store'
 import { useScene } from '../scene/useScene'
 import { TOKEN_META, tokenCSSValue, tokensToCSS, tokenVariable, validateToken } from './model'
 import type { DesignToken, TokenInput, TokenType } from './types'
+import { TokenManagerModal } from './TokenManagerModal'
 import './tokens.css'
 
 const groups: { label: string; types: TokenType[] }[] = [
@@ -88,6 +89,7 @@ export function ThemePanel({ store }: { store: SceneStore }) {
   }, [elements])
   const [search, setSearch] = useState('')
   const [editor, setEditor] = useState<{ token?: DesignToken; type: TokenType } | null>(null)
+  const [managerOpen, setManagerOpen] = useState(false)
   const [selected, setSelected] = useState<string[]>([])
   const [menu, setMenu] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
@@ -113,7 +115,21 @@ export function ThemePanel({ store }: { store: SceneStore }) {
     if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); store.removeTokens(selected); setSelected([]); setMenu(null) }
     if (event.key === 'Escape') { setMenu(null); setSelected([]) }
   }}>
-    <div className="theme-intro"><span className="section-caption">DESIGN SYSTEM</span><h3>One value. Everywhere.</h3><p>A shared language for your canvas and code.</p></div>
+    <div className="theme-intro">
+      <span className="section-caption">DESIGN SYSTEM</span>
+      <h3>One value. Everywhere.</h3>
+      <p>A shared language for your canvas and code.</p>
+      <button
+        type="button"
+        className="token-modal-toggle"
+        data-testid="theme-panel-token-manager-btn"
+        style={{ marginTop: 8 }}
+        onClick={() => setManagerOpen(true)}
+      >
+        <Variable size={13} />
+        <span>Open Token Studio</span>
+      </button>
+    </div>
     <div className="token-foundations"><button className="text-action" onClick={() => { try { const missing = foundationTokens(snapshot.tokens); if (missing.length) store.addTokens(missing); setNotice(missing.length ? `Added ${missing.length} foundation tokens.` : 'Foundation tokens are already in this document.') } catch (cause) { setNotice(cause instanceof Error ? cause.message : 'Unable to add tokens') } }}>Add foundation tokens <Plus size={12} /></button><p>Semantic colors, a type scale, and elevation.</p></div>
     <DocumentThemes store={store} />
     <div className="theme-tools"><label className="token-search"><Search size={12} /><input aria-label="Search tokens" placeholder="Find a token…" value={search} onChange={event => setSearch(event.currentTarget.value)} /></label><button className="quiet-button" aria-label="Add token" title="Add token" onClick={() => setEditor({ type: 'color' })}><Plus size={15} /></button></div>
@@ -138,5 +154,6 @@ export function ThemePanel({ store }: { store: SceneStore }) {
     {notice && <div className="token-notice" role="status">{notice}<button className="quiet-button" aria-label="Dismiss token message" onClick={() => setNotice('')}><X size={12} /></button></div>}
     <div className="theme-footer"><span>{tokens.length} tokens · Saved with this file</span><button className="text-action" disabled={!tokens.length && !snapshot.styleLibrary.styles.length} onClick={() => { setSelected(tokens.map(token => token.id)); navigator.clipboard.writeText(designSystemToCSS(snapshot.tokens, snapshot.styleLibrary)).then(() => setNotice('Theme CSS copied.')).catch(() => setNotice('Clipboard unavailable.')) }}>Copy theme CSS <Copy size={12} /></button></div>
     {editor && <TokenEditor store={store} token={editor.token} initialType={editor.type} onClose={() => setEditor(null)} />}
+    {managerOpen && <TokenManagerModal store={store} onClose={() => setManagerOpen(false)} />}
   </div>
 }
