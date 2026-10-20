@@ -1,5 +1,7 @@
 import { memo, useState, useSyncExternalStore } from 'react'
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   Circle,
@@ -140,6 +142,30 @@ const BooleanOperandRow = memo(function BooleanOperandRow({
           }}
         >
           {muted ? <EyeOff size={11} /> : <Eye size={11} />}
+        </button>
+        <button
+          className="layer-control quiet-button"
+          aria-label={`Move ${source.name} up`}
+          title="Move operand later (higher in stack)"
+          disabled={compoundLocked || index === totalCount - 1}
+          onClick={e => {
+            e.stopPropagation()
+            store.moveBooleanOperand(compoundId, source.id, 1)
+          }}
+        >
+          <ArrowUp size={11} />
+        </button>
+        <button
+          className="layer-control quiet-button"
+          aria-label={`Move ${source.name} down`}
+          title="Move operand earlier (lower in stack / subtraction base)"
+          disabled={compoundLocked || index === 0}
+          onClick={e => {
+            e.stopPropagation()
+            store.moveBooleanOperand(compoundId, source.id, -1)
+          }}
+        >
+          <ArrowDown size={11} />
         </button>
         <button
           className="layer-control quiet-button"

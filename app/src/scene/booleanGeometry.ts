@@ -331,6 +331,23 @@ export function findCompoundOperand(compound: BooleanCompound, operandId: string
   return undefined
 }
 
+/**
+ * Recursively searches for the direct parent BooleanCompound that contains the specified operandId.
+ */
+export function findCompoundParent(
+  compound: BooleanCompound,
+  operandId: string
+): BooleanCompound | undefined {
+  for (const op of compound.operands) {
+    if (op.id === operandId) return compound
+    if (op.type === 'path' && op.boolean) {
+      const parent = findCompoundParent(op.boolean, operandId)
+      if (parent) return parent
+    }
+  }
+  return undefined
+}
+
 export interface ComputeBooleanOptions {
   fillRule?: 'nonzero' | 'evenodd'
   expandStrokes?: boolean

@@ -14,7 +14,7 @@ import { CommandHistory, equalValue, valueRebaser } from './history.ts'
 import { normalizeHierarchy } from '../collaboration/model.ts'
 import type { ShaderPaint } from '../shaders/types.ts'
 import type { BooleanCompound, BooleanOperation, ElementInput, ElementOf, ElementPatch, ElementType, MaskClipMode, PathElement, SceneDocument, SceneElement, SceneSnapshot, VectorElement } from './types.ts'
-import { computeBoolean, evaluateVectorElement, findCompoundOperand, isVector, refreshBooleanElement, transformedSource } from './booleanGeometry.ts'
+import { computeBoolean, evaluateVectorElement, findCompoundOperand, isVector, refreshBooleanElement, transformedSource, vectorToContours } from './booleanGeometry.ts'
 import { expandVectorOutline, type OutlineExpansionOptions } from './outlineExpansion.ts'
 import { buildShapeTree, invertNodeOperation, dissolveTreeNode, shapeTreeToCompound, revertShapeTreeToElements, type ShapeTreeNode } from './shapeTree.ts'
 import { optimizeSvgBezierData } from './bezierOptimization.ts'
@@ -3526,6 +3526,121 @@ export class SceneStore {
     this.refreshCompound(node, { ...node.boolean, operands }, 'Reorder boolean sources')
   }
 
+  /** Reorder child operands of a nested compound at any depth in the hierarchy. */
+  reorderNestedBooleanOperands(id: string, parentCompoundId: string, operandIds: readonly string[]): void {
+    if (parentCompoundId === id) {
+      this.reorderBooleanOperands(id, operandIds)
+      return
+    }
+    const node = this.requireCompound(id)
+    const reorderIn = (operands: readonly VectorElement[]): { found: boolean; operands: readonly VectorElement[] } => {
+      let found = false
+      const next = operands.map(op => {
+        if (op.id === parentCompoundId && op.type === 'path' && op.boolean) {
+          found = true
+          const sources = new Map(op.boolean.operands.map(s => [s.id, s]))
+          if (operandIds.length !== sources.size || new Set(operandIds).size !== sources.size || operandIds.some(sId => !sources.has(sId))) {
+            throw new Error('Source order must contain every boolean source exactly once')
+          }
+          if (operandIds.every((sId, idx) => sId === op.boolean!.operands[idx].id)) return op
+          const reorderedOperands = operandIds.map((sId, zIndex) => ({ ...sources.get(sId)!, zIndex }))
+          const subResult = computeBoolean(reorderedOperands, op.boolean.operation)
+          return evaluateVectorElement({
+            ...op,
+            d: subResult.d,
+            viewBox: subResult.viewBox,
+            fillRule: subResult.fillRule,
+            boolean: {
+              ...op.boolean,
+              operands: reorderedOperands,
+            },
+          })
+        }
+        if (op.type === 'path' && op.boolean) {
+          const res = reorderIn(op.boolean.operands)
+          if (res.found) {
+            found = true
+            return evaluateVectorElement({
+              ...op,
+              boolean: { ...op.boolean, operands: res.operands },
+            })
+          }
+        }
+        return op
+      })
+      return { found, operands: next }
+    }
+    const res = reorderIn(node.boolean.operands)
+    if (!res.found) throw new Error('Nested compound source not found')
+    this.refreshCompound(node, { ...node.boolean, operands: res.operands }, 'Reorder nested boolean sources')
+  }
+
+  /** Move an operand earlier (-1) or later (+1) relative to its siblings in the compound hierarchy. */
+  moveBooleanOperand(id: string, operandId: string, direction: -1 | 1): void {
+    const node = this.requireCompound(id)
+    const rootIdx = node.boolean.operands.findIndex(op => op.id === operandId)
+    if (rootIdx !== -1) {
+      const target = rootIdx + direction
+      if (target < 0 || target >= node.boolean.operands.length) return
+      const order = node.boolean.operands.map(op => op.id)
+      ;[order[rootIdx], order[target]] = [order[target], order[rootIdx]]
+      this.reorderBooleanOperands(id, order)
+      return
+    }
+
+    const moveIn = (operands: readonly VectorElement[]): { found: boolean; operands: readonly VectorElement[] } => {
+      let found = false
+      const next = operands.map(op => {
+        if (op.type === 'path' && op.boolean) {
+          const idx = op.boolean.operands.findIndex(sub => sub.id === operandId)
+          if (idx !== -1) {
+            found = true
+            const target = idx + direction
+            if (target < 0 || target >= op.boolean.operands.length) return op
+            const order = op.boolean.operands.map(sub => sub.id)
+            ;[order[idx], order[target]] = [order[target], order[idx]]
+            const sources = new Map(op.boolean.operands.map(s => [s.id, s]))
+            const reordered = order.map((sId, zIndex) => ({ ...sources.get(sId)!, zIndex }))
+            const subResult = computeBoolean(reordered, op.boolean.operation)
+            return evaluateVectorElement({
+              ...op,
+              d: subResult.d,
+              viewBox: subResult.viewBox,
+              fillRule: subResult.fillRule,
+              boolean: {
+                ...op.boolean,
+                operands: reordered,
+              },
+            })
+          }
+          const res = moveIn(op.boolean.operands)
+          if (res.found) {
+            found = true
+            return evaluateVectorElement({
+              ...op,
+              boolean: { ...op.boolean, operands: res.operands },
+            })
+          }
+        }
+        return op
+      })
+      return { found, operands: next }
+    }
+
+    const res = moveIn(node.boolean.operands)
+    if (!res.found) throw new Error('Boolean source not found')
+    this.refreshCompound(node, { ...node.boolean, operands: res.operands }, 'Move boolean source')
+  }
+
+  /** Set the operation of a compound or nested compound by target ID. */
+  setBooleanOperandOperation(id: string, targetId: string, operation: BooleanOperation): void {
+    if (targetId === id) {
+      this.setBooleanOperation(id, operation)
+    } else {
+      this.setNestedBooleanOperation(id, targetId, operation)
+    }
+  }
+
   updateBooleanOperand(id: string, operandId: string, patch: ElementPatch<'rectangle' | 'ellipse' | 'path'>): void {
     const node = this.requireCompound(id, true)
     for (const key of ['mask', 'component', 'id', 'type', 'children', 'parentId', 'zIndex', 'boolean', 'tokenBindings', 'sharedStyleBindings', 'visible', 'locked']) {
@@ -3539,6 +3654,36 @@ export class SceneStore {
           found = true
           if (operand.type === 'path' && operand.boolean && ['d', 'viewBox', 'fillRule', 'nodes'].some(key => Object.hasOwn(patch, key))) {
             throw new Error('Release the compound to edit a nested operation')
+          }
+          const dx = patch.x !== undefined ? patch.x - operand.x : 0
+          const dy = patch.y !== undefined ? patch.y - operand.y : 0
+          if (operand.type === 'path' && operand.boolean && (dx !== 0 || dy !== 0)) {
+            const translateDescendants = (children: readonly VectorElement[]): VectorElement[] =>
+              children.map(child => {
+                const moved = { ...child, x: child.x + dx, y: child.y + dy }
+                if (moved.type === 'path' && moved.boolean) {
+                  return {
+                    ...moved,
+                    boolean: {
+                      ...moved.boolean,
+                      operands: translateDescendants(moved.boolean.operands),
+                    },
+                  }
+                }
+                return moved
+              })
+            const movedOperands = translateDescendants(operand.boolean.operands)
+            const evaluated = evaluateVectorElement({
+              ...operand,
+              ...patch,
+              style: { ...operand.style, ...patch.style },
+              boolean: {
+                ...operand.boolean,
+                operands: movedOperands,
+              },
+            })
+            validateElement(evaluated)
+            return evaluated
           }
           const updated = {
             ...operand,
@@ -3636,6 +3781,17 @@ export class SceneStore {
       },
       `Edit sub-path anchors`
     )
+  }
+
+  convertBooleanOperandToPath(id: string, operandId: string): PathElement {
+    const node = this.requireCompound(id)
+    const op = findCompoundOperand(node.boolean, operandId)
+    if (!op) throw new Error('Boolean source not found')
+    if (op.type === 'path') return op
+    const contours = vectorToContours(op)
+    this.updateBooleanOperandNodes(id, operandId, contours)
+    const updated = this.requireCompound(id)
+    return findCompoundOperand(updated.boolean, operandId) as PathElement
   }
 
   addBooleanOperand(id: string, operand: VectorElement, index?: number): void {
