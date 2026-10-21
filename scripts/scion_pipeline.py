@@ -17,6 +17,14 @@ PIPELINE_LOG = os.path.join(LOG_DIR, "pipeline.log")
 DEPLOY_SCRIPT = os.path.join(PROJECT_DIR, "auto_deploy.sh")
 CONFLICT_CHECKER = os.path.join(PROJECT_DIR, "scripts", "conflict_checker.py")
 REPO = "moslembabaee/paper-scion"
+STATE_FILE = os.path.join(LOG_DIR, "pipeline_state.json")
+
+# Maximum number of dispatch attempts per issue before it is parked as blocked.
+# Without this guard a repeatedly failing issue (clone error, quota error, stall)
+# is re-dispatched every supervisor cycle, burning tokens and flooding the log.
+MAX_ATTEMPTS_PER_ISSUE = 3
+# Backoff between attempts for the same issue (seconds).
+RETRY_BACKOFF_SECONDS = 900
 
 os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -30,6 +38,44 @@ def log(msg: str):
 def run_cmd(cmd, cwd=PROJECT_DIR, timeout=300):
     res = subprocess.run(cmd, shell=isinstance(cmd, str), cwd=cwd, capture_output=True, text=True, timeout=timeout)
     return res.returncode, res.stdout.strip(), res.stderr.strip()
+
+def load_state():
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+def save_state(state):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+    except OSError as e:
+        log(f"Failed to persist pipeline state: {e}")
+
+def attempt_allowed(state, issue_num):
+    """Return True when the issue may be dispatched now (attempt + backoff guard)."""
+    entry = state.get(str(issue_num))
+    if not entry:
+        return True
+    attempts = entry.get("attempts", 0)
+    if attempts >= MAX_ATTEMPTS_PER_ISSUE:
+        return False
+    last = entry.get("last_attempt_ts", 0)
+    if (time.time() - last) < RETRY_BACKOFF_SECONDS:
+        return False
+    return True
+
+def record_attempt(state, issue_num, success=False):
+    """Count a dispatch attempt. `success=True` resets the counter (issue shipped)."""
+    entry = state.setdefault(str(issue_num), {"attempts": 0})
+    if success:
+        entry["attempts"] = 0
+        entry["last_attempt_ts"] = 0
+    else:
+        entry["attempts"] = entry.get("attempts", 0) + 1
+        entry["last_attempt_ts"] = time.time()
+    save_state(state)
 
 def get_scion_agents():
     code, stdout, stderr = run_cmd(["scion", "list", "--format", "json"])
@@ -128,6 +174,10 @@ def handle_completed_agent(agent):
             log(f"Closing GitHub Issue #{issue_num}...")
             run_cmd(["gh", "issue", "close", str(issue_num), "-R", REPO, "-c", f"Resolved and deployed by Scion agent `{name}`."])
             run_cmd(["gh", "issue", "edit", str(issue_num), "-R", REPO, "--remove-label", "in-progress"])
+            # The issue shipped: clear its attempt counter so a future issue with
+            # the same number would not inherit a stale failure count.
+            state = load_state()
+            record_attempt(state, issue_num, success=True)
     else:
         log(f"⚠️ Agent '{name}' exited without creating a PR for issue #{issue_num}.")
         if issue_num:
@@ -136,7 +186,7 @@ def handle_completed_agent(agent):
     log(f"Cleaning up completed Scion agent '{name}'...")
     run_cmd(["scion", "delete", name, "--yes"])
 
-def dispatch_task(issue):
+def dispatch_task(issue, state):
     num = issue["number"]
     title = issue["title"]
     body = issue.get("body", "")
@@ -179,6 +229,9 @@ Engineering Rules (from AGENTS.md & LESSONS.md):
     else:
         log(f"❌ Failed to launch agent '{agent_name}': {stderr or stdout}")
         run_cmd(["gh", "issue", "edit", str(num), "-R", REPO, "--remove-label", "in-progress", "--add-label", "blocked"])
+    # A dispatch is always an attempt. The counter is only reset when the agent
+    # actually ships a merged PR (see handle_completed_agent).
+    record_attempt(state, num, success=False)
 
 def step():
     agents = get_scion_agents()
@@ -198,9 +251,15 @@ def step():
 
         is_terminal = (
             phase in ("completed", "stopped", "failed", "error")
-            or activity in ("completed", "limits_exceeded", "stalled", "offline")
+            or activity in ("completed", "limits_exceeded")
             or container_status.startswith("Exited")
         )
+        # NOTE: "stalled" and "offline" are NOT terminal. Scion marks an agent
+        # stalled after ~10 min without a state transition, which happens
+        # routinely while the agent waits on a long test/build command.
+        # Treating those as terminal made the supervisor delete and re-dispatch
+        # a healthy, mid-flight agent every cycle, destroying its context and
+        # work (issue #79 was restarted 86 times over 8 hours).
         if is_terminal:
             handle_completed_agent(agent)
         else:
@@ -210,6 +269,8 @@ def step():
     # No agent running -> check if there's any pending deployment
     deploy_now()
 
+    state = load_state()
+
     # Pick next issue
     issues = get_open_issues()
     if not issues:
@@ -217,8 +278,21 @@ def step():
         return
 
     next_issue = select_next_issue(issues)
-    if next_issue:
-        dispatch_task(next_issue)
+    if not next_issue:
+        return
+
+    num = next_issue["number"]
+    if not attempt_allowed(state, num):
+        entry = state.get(str(num), {})
+        attempts = entry.get("attempts", 0)
+        if attempts >= MAX_ATTEMPTS_PER_ISSUE:
+            log(f"⛔ Issue #{num} exceeded {MAX_ATTEMPTS_PER_ISSUE} attempts; parking it as blocked.")
+            run_cmd(["gh", "issue", "edit", str(num), "-R", REPO, "--remove-label", "in-progress", "--add-label", "blocked"])
+        else:
+            log(f"⏳ Issue #{num} is in retry backoff (attempt {attempts}/{MAX_ATTEMPTS_PER_ISSUE}).")
+        return
+
+    dispatch_task(next_issue, state)
 
 def main():
     log("Starting Paper Scion Autonomous Pipeline supervisor...")
