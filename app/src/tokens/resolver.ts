@@ -1,7 +1,7 @@
 import type { SceneElement } from '../scene/types.ts'
 import type { DesignTheme, DesignToken, StyleLibrary, TokenType } from './types.ts'
 import { resolveTokens } from './library.ts'
-import { STANDARD_THEMES } from './engine.ts'
+import { STANDARD_THEMES } from './themes.ts'
 
 export type VariableMode = 'light' | 'dark' | 'high-contrast' | (string & {})
 

@@ -3,6 +3,9 @@ import type { SceneStore } from '../scene/store.ts'
 import { resolveTokens } from './library.ts'
 import { tokenVariable, validateToken, TOKEN_META } from './model.ts'
 import type { DesignTheme, DesignToken, StyleLibrary, TokenInput, TokenProperty, TokenType } from './types.ts'
+import { STANDARD_THEMES } from './themes.ts'
+
+export { STANDARD_THEMES }
 
 export interface TokenMatrixCell {
   readonly value: string | number
@@ -19,12 +22,6 @@ export interface TokenMatrixRow {
   readonly boundNodes: readonly SceneElement[]
   readonly boundCount: number
 }
-
-export const STANDARD_THEMES: readonly DesignTheme[] = Object.freeze([
-  { id: 'light', name: 'Light' },
-  { id: 'dark', name: 'Dark' },
-  { id: 'high-contrast', name: 'High-Contrast' },
-])
 
 /**
  * Returns all configured document theme modes, ensuring consistent ordering.
@@ -330,11 +327,4 @@ export {
   type ResolvedTokenValue,
   type ElementModeContext,
 } from './resolver.ts'
-
-export {
-  THEME_STYLE_TAG_ID,
-  generateThemeTokensCSS,
-  injectThemeTokensCSS,
-  useThemeTokenInjector,
-} from './injector.ts'
 

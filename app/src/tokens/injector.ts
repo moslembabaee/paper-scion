@@ -4,7 +4,7 @@ import { useScene } from '../scene/useScene.ts'
 import { resolveTokens } from './library.ts'
 import { tokenCSSValue, tokenVariable, tokensToCSS } from './model.ts'
 import type { DesignToken, StyleLibrary } from './types.ts'
-import { STANDARD_THEMES } from './engine.ts'
+import { STANDARD_THEMES } from './themes.ts'
 import { sharedStyleClass } from './libraryCodegen.ts'
 import { effectsCSS } from './effects.ts'
 
