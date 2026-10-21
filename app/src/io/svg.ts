@@ -4,11 +4,11 @@ import type { Bounds } from '../canvas/types.ts'
 import { unionBounds } from '../canvas/math.ts'
 import { getWorldBounds, getWorldMatrix } from '../scene/geometry.ts'
 import { selectionRoots } from '../scene/selectionGeometry.ts'
-import { frameMask, maskPathData, maskFillRule } from '../scene/maskGeometry.ts'
+import { frameMask, maskPathData, maskFillRule, type MaskElement } from '../scene/maskGeometry.ts'
 import { parsePath, pathBounds } from '../scene/pathGeometry.ts'
 import { resolveTextPathD } from '../scene/typography.ts'
 import { textMarkup } from '../scene/textMarkup.ts'
-import type { SceneElement, SceneSnapshot, TextElement } from '../scene/types.ts'
+import type { GradientPaint, SceneElement, SceneSnapshot, TextElement } from '../scene/types.ts'
 
 export interface ExportOptions {
   readonly scope: 'selection' | 'canvas'
@@ -87,7 +87,78 @@ export function sceneToSVG(state: SceneSnapshot, options: ExportOptions, assets 
   const unique = () => `paper-export-${++serial}`
   const rect = (node: SceneElement, inset = 0) => `<rect x="${num(inset)}" y="${num(inset)}" width="${num(Math.max(0, node.width - inset * 2))}" height="${num(Math.max(0, node.height - inset * 2))}" rx="${'cornerRadius' in node ? num(node.cornerRadius) : 0}"/>`
   const clip = (content: string) => { const id = unique(); defs.push(`<clipPath id="${id}" clipPathUnits="userSpaceOnUse">${content}</clipPath>`); return `clip-path="url(#${id})"` }
-  const maskDef = (content: string, type: 'alpha' | 'luminance' = 'alpha') => { const id = unique(); defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"${type === 'luminance' ? ' mask-type="luminance"' : ''}>${content}</mask>`); return `mask="url(#${id})"` }
+  const maskDef = (content: string, type: 'alpha' | 'luminance' = 'alpha') => { const id = unique(); defs.push(`<mask id="${id}" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" mask-type="${type}">${content}</mask>`); return `mask="url(#${id})"` }
+  const createGradientDef = (gradient: GradientPaint): string => {
+    const gId = unique()
+    const rad = (gradient.angle * Math.PI) / 180
+    const spreadHalf = gradient.spread * 0.5
+    const stopsXml = gradient.stops.map(s => `<stop offset="${(s.offset * 100).toFixed(2)}%" stop-color="${xml(s.color)}" stop-opacity="${num(s.opacity ?? 1)}"/>`).join('')
+    if (gradient.type === 'linear') {
+      const x1 = `${((gradient.origin.x - Math.cos(rad) * spreadHalf) * 100).toFixed(2)}%`
+      const y1 = `${((gradient.origin.y - Math.sin(rad) * spreadHalf) * 100).toFixed(2)}%`
+      const x2 = `${((gradient.origin.x + Math.cos(rad) * spreadHalf) * 100).toFixed(2)}%`
+      const y2 = `${((gradient.origin.y + Math.sin(rad) * spreadHalf) * 100).toFixed(2)}%`
+      defs.push(`<linearGradient id="${gId}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stopsXml}</linearGradient>`)
+    } else {
+      const cx = `${(gradient.origin.x * 100).toFixed(2)}%`
+      const cy = `${(gradient.origin.y * 100).toFixed(2)}%`
+      const r = `${(gradient.spread * 50).toFixed(2)}%`
+      const fx = `${((gradient.origin.x + Math.cos(rad) * gradient.focalLength * 0.25) * 100).toFixed(2)}%`
+      const fy = `${((gradient.origin.y + Math.sin(rad) * gradient.focalLength * 0.25) * 100).toFixed(2)}%`
+      defs.push(`<radialGradient id="${gId}" cx="${cx}" cy="${cy}" r="${r}" fx="${fx}" fy="${fy}">${stopsXml}</radialGradient>`)
+    }
+    return `url(#${gId})`
+  }
+  const applyMask = (mask: MaskElement, children: string, transform = ''): string => {
+    const mode = mask.mask?.mode ?? 'vector'
+    const inverted = Boolean(mask.mask?.inverted)
+    const d = xml(optimizeSVGPath(maskPathData(mask)))
+    const rule = maskFillRule(mask)
+    const tAttr = transform ? ` transform="${transform}"` : ''
+    const op = num(mask.style.opacity ?? 1)
+
+    if (mode === 'vector' && !inverted) {
+      return `<g ${clip(`<path${tAttr} d="${d}" clip-rule="${rule}"/>`)}>${children}</g>`
+    }
+    if (mode === 'vector' && inverted) {
+      return `<g ${maskDef(`<rect width="100%" height="100%" fill="white"/><path${tAttr} d="${d}" fill="black" fill-rule="${rule}"/>`, 'alpha')}>${children}</g>`
+    }
+    if (mode === 'alpha') {
+      if (inverted) {
+        return `<g ${maskDef(`<rect width="100%" height="100%" fill="white"/><path${tAttr} d="${d}" fill="black" fill-rule="${rule}" opacity="${op}"/>`, 'alpha')}>${children}</g>`
+      }
+      let fill = 'white'
+      if (mask.style.gradient && mask.style.gradient.stops && mask.style.gradient.stops.length >= 2) {
+        fill = createGradientDef(mask.style.gradient)
+      }
+      return `<g ${maskDef(`<path${tAttr} d="${d}" fill="${fill}" fill-rule="${rule}" opacity="${op}"/>`, 'alpha')}>${children}</g>`
+    }
+    if (mode === 'luminance') {
+      let fill = xml(mask.style.fill ?? '#ffffff')
+      if (mask.style.gradient && mask.style.gradient.stops && mask.style.gradient.stops.length >= 2) {
+        fill = createGradientDef(mask.style.gradient)
+      }
+      let filterAttr = ''
+      const threshold = mask.mask?.luminanceThreshold ?? 0.5
+      if (inverted || threshold !== 0.5) {
+        const filterId = unique()
+        let filterBody = ''
+        if (inverted) {
+          filterBody += '<feComponentTransfer><feFuncR type="linear" slope="-1" intercept="1"/><feFuncG type="linear" slope="-1" intercept="1"/><feFuncB type="linear" slope="-1" intercept="1"/></feComponentTransfer>'
+        }
+        if (threshold !== 0.5) {
+          const slope = (1 / Math.max(0.01, 1 - threshold)).toFixed(3)
+          const intercept = (-threshold / Math.max(0.01, 1 - threshold)).toFixed(3)
+          filterBody += `<feComponentTransfer><feFuncR type="linear" slope="${slope}" intercept="${intercept}"/><feFuncG type="linear" slope="${slope}" intercept="${intercept}"/><feFuncB type="linear" slope="${slope}" intercept="${intercept}"/></feComponentTransfer>`
+        }
+        defs.push(`<filter id="${filterId}" x="0%" y="0%" width="100%" height="100%">${filterBody}</filter>`)
+        filterAttr = ` filter="url(#${filterId})"`
+      }
+      const bg = inverted ? '<rect width="100%" height="100%" fill="white"/>' : ''
+      return `<g ${maskDef(`${bg}<path${tAttr} d="${d}" fill="${fill}" fill-rule="${rule}" opacity="${op}"${filterAttr}/>`, 'luminance')}>${children}</g>`
+    }
+    return children
+  }
   const shape = (node: SceneElement, inset = 0) => {
     if (node.type === 'ellipse') return `<ellipse cx="${num(node.width / 2)}" cy="${num(node.height / 2)}" rx="${num(Math.max(0, node.width / 2 - inset))}" ry="${num(Math.max(0, node.height / 2 - inset))}"/>`
     if (node.type === 'path') {
@@ -109,25 +180,7 @@ export function sceneToSVG(state: SceneSnapshot, options: ExportOptions, assets 
     if (shader && !shaderSrc) throw new Error(`The shader on “${node.name}” could not be captured.`)
     let effectiveFill = fill ?? 'none'
     if (!shaderSrc && gradient && gradient.enabled !== false && (gradient.type === 'linear' || gradient.type === 'radial')) {
-      const gId = unique()
-      const rad = (gradient.angle * Math.PI) / 180
-      const spreadHalf = gradient.spread * 0.5
-      const stopsXml = gradient.stops.map(s => `<stop offset="${(s.offset * 100).toFixed(2)}%" stop-color="${xml(s.color)}" stop-opacity="${num(s.opacity ?? 1)}"/>`).join('')
-      if (gradient.type === 'linear') {
-        const x1 = `${((gradient.origin.x - Math.cos(rad) * spreadHalf) * 100).toFixed(2)}%`
-        const y1 = `${((gradient.origin.y - Math.sin(rad) * spreadHalf) * 100).toFixed(2)}%`
-        const x2 = `${((gradient.origin.x + Math.cos(rad) * spreadHalf) * 100).toFixed(2)}%`
-        const y2 = `${((gradient.origin.y + Math.sin(rad) * spreadHalf) * 100).toFixed(2)}%`
-        defs.push(`<linearGradient id="${gId}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stopsXml}</linearGradient>`)
-      } else {
-        const cx = `${(gradient.origin.x * 100).toFixed(2)}%`
-        const cy = `${(gradient.origin.y * 100).toFixed(2)}%`
-        const r = `${(gradient.spread * 50).toFixed(2)}%`
-        const fx = `${((gradient.origin.x + Math.cos(rad) * gradient.focalLength * 0.25) * 100).toFixed(2)}%`
-        const fy = `${((gradient.origin.y + Math.sin(rad) * gradient.focalLength * 0.25) * 100).toFixed(2)}%`
-        defs.push(`<radialGradient id="${gId}" cx="${cx}" cy="${cy}" r="${r}" fx="${fx}" fy="${fy}">${stopsXml}</radialGradient>`)
-      }
-      effectiveFill = `url(#${gId})`
+      effectiveFill = createGradientDef(gradient)
     }
     let shadowAttr = ''
     if (node.style.effects?.some(effect => effect.enabled)) {
@@ -151,25 +204,7 @@ export function sceneToSVG(state: SceneSnapshot, options: ExportOptions, assets 
       const mask = frameMask(state.elements, node)
       if (!shaderSrc) content += `<g fill="${xml(effectiveFill)}">${rect(node)}</g>`
       const children = node.children.filter(child => child !== mask?.id).map(child => render(child)).join('')
-      let masked = children
-      if (mask) {
-        const mode = mask.mask?.mode ?? 'vector'
-        const inverted = Boolean(mask.mask?.inverted)
-        const d = xml(optimizeSVGPath(maskPathData(mask)))
-        const rule = maskFillRule(mask)
-        if (mode === 'vector' && !inverted) {
-          masked = `<g ${clip(`<path d="${d}" clip-rule="${rule}"/>`)}>${children}</g>`
-        } else if (mode === 'vector' && inverted) {
-          masked = `<g ${maskDef(`<rect width="100%" height="100%" fill="white"/><path d="${d}" fill="black" fill-rule="${rule}"/>`)}>${children}</g>`
-        } else if (mode === 'alpha') {
-          const fill = inverted ? 'black' : 'white'
-          const bg = inverted ? '<rect width="100%" height="100%" fill="white"/>' : ''
-          masked = `<g ${maskDef(`${bg}<path d="${d}" fill="${fill}" fill-rule="${rule}" opacity="${num(mask.style.opacity ?? 1)}"/>`)}>${children}</g>`
-        } else if (mode === 'luminance') {
-          const fill = xml(mask.style.fill ?? '#ffffff')
-          masked = `<g ${maskDef(`<path d="${d}" fill="${fill}" fill-rule="${rule}" opacity="${num(mask.style.opacity ?? 1)}"/>`, 'luminance')}>${children}</g>`
-        }
-      }
+      const masked = mask ? applyMask(mask, children) : children
       content += `<g ${node.clipContent ? clip(rect(node)) : ''}>${masked}</g>`
       content += `<g fill="none" ${strokeAttrs}>${rect(node, (stroke?.width ?? 0) / 2)}</g>`
     } else if (node.type === 'text') {
@@ -193,7 +228,7 @@ export function sceneToSVG(state: SceneSnapshot, options: ExportOptions, assets 
       if (frame.type === 'frame') {
         if (frame.clipContent) output = `<g ${clip(`<g transform="${matrix(getWorldMatrix(state, parent))}">${rect(frame)}</g>`)}>${output}</g>`
         const mask = frameMask(state.elements, frame)
-        if (mask && branch !== mask.id) output = `<g ${clip(`<path transform="${matrix(getWorldMatrix(state, parent))}" d="${xml(optimizeSVGPath(maskPathData(mask)))}" clip-rule="${maskFillRule(mask)}"/>`)}>${output}</g>`
+        if (mask && branch !== mask.id) output = applyMask(mask, output, matrix(getWorldMatrix(state, parent)))
       }
       branch = parent
       parent = frame.parentId

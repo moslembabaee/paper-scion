@@ -23,9 +23,14 @@ import {
   Trash2,
   Type,
   UnlockKeyhole,
+  Scissors,
+  Sparkles,
+  Sun,
+  CornerDownRight,
 } from 'lucide-react'
 import type { SceneStore } from './store'
 import type { BooleanOperation, ElementType, VectorElement } from './types'
+import { getMaskHierarchy } from './maskGeometry'
 import { useScene } from './useScene'
 
 const elementIcons = {
@@ -227,10 +232,20 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
   const locked = useScene(store, () => store.isLocked(id))
   const visible = useScene(store, () => store.isVisible(id))
   const active = useScene(store, () => store.getHistorySnapshot().active)
+  const maskInfo = useScene(store, state => getMaskHierarchy(state.elements, id))
   const [expanded, setExpanded] = useState(false)
   if (!node) return null
+
+  const MaskModeIcon = node.mask
+    ? node.mask.mode === 'alpha'
+      ? Sparkles
+      : node.mask.mode === 'luminance'
+        ? Sun
+        : Scissors
+    : Scan
+
   const Icon = node.mask
-    ? Scan
+    ? MaskModeIcon
     : node.component?.kind === 'master'
       ? Diamonds
       : node.component?.kind === 'instance' && node.component.instanceId === id
@@ -247,8 +262,13 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
   return (
     <div role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? expanded : undefined}>
       <div
-        className={`scene-layer-row ${selected ? 'selected' : ''} ${node.mask ? 'is-mask' : ''} ${!visible ? 'is-hidden' : ''} ${node.component ? 'is-component' : ''} ${node.component?.kind === 'master' ? 'is-master' : ''}`}
+        className={`scene-layer-row ${selected ? 'selected' : ''} ${node.mask ? 'is-mask' : ''} ${maskInfo.isMaskGroup ? 'is-mask-group' : ''} ${maskInfo.isMasked ? 'is-masked-target' : ''} ${!visible ? 'is-hidden' : ''} ${node.component ? 'is-component' : ''} ${node.component?.kind === 'master' ? 'is-master' : ''}`}
         data-layer-id={id}
+        data-mask-role={maskInfo.role}
+        data-mask-source={node.mask ? 'true' : undefined}
+        data-mask-group={maskInfo.isMaskGroup ? 'true' : undefined}
+        data-masked-by={maskInfo.isMasked ? maskInfo.maskSource?.id : undefined}
+        data-mask-mode={maskInfo.role !== 'none' ? maskInfo.mode : undefined}
         style={{ paddingLeft: 8 + depth * 12 }}
       >
         <button
@@ -274,6 +294,11 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
           }}
           title={locked ? `${node.name} is locked` : node.name}
         >
+          {maskInfo.isMasked && (
+            <span title={`Masked by ${maskInfo.maskSource?.name ?? 'mask'}`}>
+              <CornerDownRight size={10} className="layer-clip-indicator" />
+            </span>
+          )}
           <Icon size={12} />
           <span>{node.name.replace(/^\d+ — /, '')}</span>
           {isCompound && (
@@ -281,13 +306,48 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
               {node.boolean!.operation.toUpperCase()}
             </span>
           )}
+          {maskInfo.isMaskGroup && (
+            <span className="mask-group-badge" title={`Mask group with ${maskInfo.maskedElements?.length ?? 0} clipped layers (${maskInfo.mode} mask)`}>
+              MASK GROUP
+            </span>
+          )}
+          {maskInfo.isMasked && (
+            <span className="layer-clipped-badge" title={`Clipped by ${maskInfo.maskSource?.name ?? 'mask'} (${maskInfo.mode})`}>
+              CLIPPED
+            </span>
+          )}
           {node.mask && (
-            <small className={`layer-mask-label ${node.mask.enabled ? '' : 'is-disabled'}`}>
-              MASK
-            </small>
+            <button
+              type="button"
+              className={`layer-mask-label is-mode-${node.mask.mode ?? 'vector'} ${node.mask.enabled ? '' : 'is-disabled'}`}
+              title={`Mask mode: ${node.mask.mode ?? 'vector'}${node.mask.inverted ? ' (inverted)' : ''}. Click to cycle mode.`}
+              onClick={e => {
+                e.stopPropagation()
+                store.cycleMaskMode(id)
+              }}
+            >
+              {node.mask.mode === 'alpha'
+                ? 'ALPHA MASK'
+                : node.mask.mode === 'luminance'
+                  ? `LUM ${Math.round((node.mask.luminanceThreshold ?? 0.5) * 100)}%`
+                  : 'MASK'}
+              {node.mask.inverted ? ' [INV]' : ''}
+            </button>
           )}
           {overridden && <i className="layer-instance-dot" title="Local property overrides" />}
         </button>
+        {node.mask && (
+          <button
+            className={`layer-control layer-mask-control quiet-button ${node.mask.isolated ? 'is-isolated' : ''}`}
+            disabled={active || node.component?.kind === 'instance'}
+            aria-label={`${node.mask.isolated ? 'Exit' : 'Isolate'} ${node.name} mask on canvas`}
+            aria-pressed={node.mask.isolated}
+            title={node.mask.isolated ? 'Exit mask canvas isolation' : 'Isolate mask on canvas'}
+            onClick={() => store.setMaskIsolated(id, !node.mask!.isolated)}
+          >
+            <Eye size={11} />
+          </button>
+        )}
         {node.mask && (
           <button
             className="layer-control layer-mask-control quiet-button"

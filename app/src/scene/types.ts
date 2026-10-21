@@ -406,6 +406,23 @@ export interface ImageElement extends BaseElement {
 }
 
 export type SceneElement = FrameElement | RectangleElement | EllipseElement | PathElement | TextElement | ImageElement
+export type MaskElement = VectorElement | FrameElement
+export type MaskHierarchyRole = 'mask-source' | 'masked-content' | 'mask-group' | 'none'
+
+export interface MaskHierarchyInfo {
+  readonly role: MaskHierarchyRole
+  readonly isMask: boolean
+  readonly isMasked: boolean
+  readonly isMaskGroup: boolean
+  readonly maskSource?: MaskElement
+  readonly maskedElements?: readonly SceneElement[]
+  readonly parentFrame?: FrameElement
+  readonly mode: MaskClipMode
+  readonly luminanceThreshold: number
+  readonly inverted: boolean
+  readonly isolated: boolean
+  readonly enabled: boolean
+}
 export type ElementType = SceneElement['type']
 export type ElementOf<T extends ElementType> = Extract<SceneElement, { type: T }>
 export type ElementInput<T extends ElementType> = Partial<Omit<ElementOf<T>, 'component' | 'type' | 'children' | 'zIndex' | 'style'>> & { readonly style?: Partial<ElementStyle> }

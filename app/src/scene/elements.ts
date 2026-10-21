@@ -82,7 +82,8 @@ export function validateElement(element: SceneElement, depth = 0): void {
       typeof element.mask.showOutline !== 'boolean' ||
       (element.mask.mode !== undefined && !['vector', 'alpha', 'luminance'].includes(element.mask.mode)) ||
       (element.mask.luminanceThreshold !== undefined && (!Number.isFinite(element.mask.luminanceThreshold) || element.mask.luminanceThreshold < 0 || element.mask.luminanceThreshold > 1)) ||
-      (element.mask.inverted !== undefined && typeof element.mask.inverted !== 'boolean')
+      (element.mask.inverted !== undefined && typeof element.mask.inverted !== 'boolean') ||
+      (element.mask.isolated !== undefined && typeof element.mask.isolated !== 'boolean')
     ) {
       throw new Error('Invalid vector mask')
     }

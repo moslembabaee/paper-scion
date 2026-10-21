@@ -337,6 +337,7 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
                   y="0"
                   width={node.width}
                   height={node.height}
+                  style={{ maskType: isAlphaMask(mask) ? 'alpha' : 'luminance' }}
                 >
                   {(isVectorMask(mask) && isMaskInverted(mask)) || (isAlphaMask(mask) && isMaskInverted(mask)) ? (
                     <>
@@ -355,6 +356,17 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
                       fillRule={maskFillRule(mask)}
                       opacity={mask.style.opacity ?? 1}
                     />
+                  ) : isLuminanceMask(mask) && isMaskInverted(mask) ? (
+                    <>
+                      <rect x="0" y="0" width={node.width} height={node.height} fill="#ffffff" />
+                      <path
+                        d={maskPathData(mask)}
+                        fill={mask.style.gradient ? `url(#${effectId}-mask-grad)` : (mask.style.fill ?? '#ffffff')}
+                        fillRule={maskFillRule(mask)}
+                        opacity={mask.style.opacity ?? 1}
+                        filter={`url(#${effectId}-lum-filter)`}
+                      />
+                    </>
                   ) : (
                     /* Luminance mask */
                     <path

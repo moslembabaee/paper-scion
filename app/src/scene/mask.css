@@ -77,7 +77,8 @@
 }
 
 .scene-layer-row.is-mask .layer-select > svg,
-.layer-mask-control[aria-pressed="true"] {
+.layer-mask-control[aria-pressed="true"],
+.layer-mask-control.is-isolated {
   color: var(--paper-accent-text, #81adec);
 }
 
@@ -89,10 +90,86 @@
   color: var(--paper-accent-text, #81adec);
   font: 8px var(--font-mono, monospace);
   letter-spacing: 0.04em;
+  background: var(--paper-accent-soft, rgba(129, 173, 236, 0.12));
+  border: 1px solid rgba(129, 173, 236, 0.35);
+  border-radius: 3px;
+  padding: 1px 4px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  line-height: 1.2;
+}
+
+.layer-mask-label:hover {
+  background: var(--paper-accent-soft, rgba(129, 173, 236, 0.25));
+  border-color: var(--paper-accent, #81adec);
 }
 
 .layer-mask-label.is-disabled {
   color: var(--paper-text-muted, #777777);
+  border-color: var(--paper-border, #222222);
+  background: transparent;
+}
+
+.layer-mask-label.is-mode-alpha {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.4);
+  background: rgba(192, 132, 252, 0.12);
+}
+
+.layer-mask-label.is-mode-alpha:hover {
+  background: rgba(192, 132, 252, 0.25);
+  border-color: #c084fc;
+}
+
+.layer-mask-label.is-mode-luminance {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.layer-mask-label.is-mode-luminance:hover {
+  background: rgba(251, 191, 36, 0.25);
+  border-color: #fbbf24;
+}
+
+/* ─── Mask Hierarchy Inspection in Layer Tree ────────────────────────── */
+
+.scene-layer-row.is-mask-group {
+  border-left: 2px solid var(--paper-accent, #81adec);
+}
+
+.mask-group-badge {
+  font: 7.5px var(--font-mono, monospace);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--paper-accent, #81adec);
+  background: var(--paper-accent-soft, rgba(129, 173, 236, 0.14));
+  border: 1px solid rgba(129, 173, 236, 0.3);
+  border-radius: 2px;
+  padding: 1px 4px;
+  margin-left: 4px;
+}
+
+.scene-layer-row.is-masked-target {
+  opacity: 0.95;
+}
+
+.scene-layer-row.is-masked-target .layer-clip-indicator {
+  color: var(--paper-accent, #81adec);
+  opacity: 0.75;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.layer-clipped-badge {
+  font: 7.5px var(--font-mono, monospace);
+  letter-spacing: 0.03em;
+  color: var(--paper-text-muted, #888888);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--paper-border, #333333);
+  border-radius: 2px;
+  padding: 0 3px;
+  margin-left: 4px;
 }
 
 /* ─── Mode Pills ────────────────────────────────────────────────────────── */
