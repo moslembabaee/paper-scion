@@ -17,7 +17,7 @@ import { GradientCanvasOverlay } from '../shaders/GradientCanvasOverlay'
 import { MaskCanvasOverlay } from './MaskCanvasOverlay'
 import { useArrangeShortcuts } from './useArrangeShortcuts'
 import { measurementHit } from './measurementGeometry'
-import { vectorContainsPoint } from './booleanGeometry'
+import { compoundParentToOperandLocal, findCompoundOperandAtPoint } from './booleanGeometry'
 import { worldToLocal } from './maskGeometry'
 import { CollaborationOverlay } from '../collaboration/CollaborationOverlay'
 import type { CollaborationSession } from '../collaboration/session'
@@ -79,26 +79,46 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
     if (interactionDisabled) return
     const viewport = hostRef.current!.querySelector<HTMLElement>('.canvas-viewport')!
     const doubleClick = (event: MouseEvent) => {
-      if (panMode || penMode || isEditingPath || viewport.dataset.space === 'true' || viewport.dataset.panning === 'true' || (event.target as Element).closest('.viewport-ui')) return
+      if (panMode || penMode || viewport.dataset.space === 'true' || viewport.dataset.panning === 'true' || (event.target as Element).closest('.viewport-ui')) return
       const rect = viewport.getBoundingClientRect()
       const worldPoint = controller.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top })
       const hit = measurementHit(store.getSnapshot(), worldPoint, true)
+
+      if (isEditingPath) {
+        if (!hit) {
+          exitPath()
+          return
+        }
+        const hitNode = store.getSnapshot().elements[hit]
+        if (hitNode?.type === 'path' && hitNode.boolean) {
+          const localPoint = hitNode.parentId === null ? worldPoint : worldToLocal(store.getSnapshot(), hitNode.parentId, worldPoint)
+          const operandPoint = compoundParentToOperandLocal(hitNode, localPoint)
+          const targetOp = findCompoundOperandAtPoint(hitNode.boolean, operandPoint)
+          if (targetOp && targetOp.id !== effectiveOperandId) {
+            enterPath(hit, targetOp.id)
+            return
+          }
+        }
+        if (hit !== effectiveEditingId) {
+          exitPath()
+          enterPath(hit)
+        }
+        return
+      }
+
       if (!hit) {
         enterPath(undefined)
         return
       }
       const hitNode = store.getSnapshot().elements[hit]
       if (hitNode?.type === 'path' && hitNode.boolean) {
+        const localPoint = hitNode.parentId === null ? worldPoint : worldToLocal(store.getSnapshot(), hitNode.parentId, worldPoint)
+        const operandPoint = compoundParentToOperandLocal(hitNode, localPoint)
+        const targetOp = findCompoundOperandAtPoint(hitNode.boolean, operandPoint)
         const selectedOp = store.getSelectedCompoundOperand()
-        let targetOperandId: string | undefined = selectedOp?.compoundId === hit ? selectedOp.operandId : undefined
-        if (!targetOperandId) {
-          const localPoint = hitNode.parentId === null ? worldPoint : worldToLocal(store.getSnapshot(), hitNode.parentId, worldPoint)
-          for (const op of [...hitNode.boolean.operands].reverse()) {
-            if (vectorContainsPoint(op, localPoint)) {
-              targetOperandId = op.id
-              break
-            }
-          }
+        let targetOperandId: string | undefined = targetOp?.id
+        if (!targetOperandId && selectedOp?.compoundId === hit) {
+          targetOperandId = selectedOp.operandId
         }
         enterPath(hit, targetOperandId ?? hitNode.boolean.operands[0]?.id)
       } else {

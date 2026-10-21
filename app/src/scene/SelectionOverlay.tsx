@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { ArrowDown, ArrowRight, ArrowUpRight, Combine, Diamond, Component as Diamonds, Layers, PenTool, Plus, RotateCcw, Sparkles, Unlink } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUpRight, Combine, Diamond, Component as Diamonds, Layers, PenTool, Plus, RotateCcw, Sparkles, Split, Unlink } from 'lucide-react'
 import type { ViewportController } from '../canvas'
 import type { Bounds, Point } from '../canvas/types'
 import { getWorldBounds, getWorldMatrix } from './geometry'
@@ -711,6 +711,19 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
           >
             <Unlink size={10} />
             <span>Release</span>
+          </button>
+          <button
+            type="button"
+            className="sel-component-btn"
+            data-testid="sel-flatten-boolean-btn"
+            title="Flatten compound into destructive Bézier outlines (⌘E)"
+            onClick={e => {
+              e.stopPropagation()
+              store.flattenBoolean(selectedNode.id)
+            }}
+          >
+            <Split size={10} />
+            <span>Flatten</span>
           </button>
         </div>
       </div>

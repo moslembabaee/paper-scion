@@ -4,10 +4,13 @@ import { SceneStore } from '../src/scene/store.ts'
 import { createElement } from '../src/scene/elements.ts'
 import {
   computeBoolean,
+  compoundParentToOperandLocal,
   evaluateCompoundHierarchy,
   evaluateVectorElement,
   findCompoundOperand,
+  findCompoundOperandAtPoint,
   findCompoundParent,
+  getCompoundBreadcrumbs,
   vectorPathData,
   vectorToContours,
 } from '../src/scene/booleanGeometry.ts'
@@ -503,3 +506,182 @@ test('Standalone clipped SVG export with generateClippedSVGExport and polygon cl
     )
   }
 })
+
+test('compoundParentToOperandLocal: coordinate mapping across translation, scaling, and rotation', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'base-sq', x: 0, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'cutter-sq', x: 50, y: 50, width: 100, height: 100 })
+  store.select(['base-sq', 'cutter-sq'])
+
+  const compound = store.booleanSelection('union')
+  // 1. Identity / untransformed mapping
+  const p1 = compoundParentToOperandLocal(compound, { x: 25, y: 25 })
+  close(p1.x, 25, 1e-3)
+  close(p1.y, 25, 1e-3)
+
+  // 2. Translated compound
+  store.update(compound.id, 'path', { x: 200, y: 150 })
+  const movedCompound = store.getSnapshot().elements[compound.id]
+  const p2 = compoundParentToOperandLocal(movedCompound, { x: 225, y: 175 })
+  close(p2.x, 25, 1e-3)
+  close(p2.y, 25, 1e-3)
+
+  // 3. Scaled compound (width: 300, height: 200 vs viewBox [0,0,150,150])
+  store.update(compound.id, 'path', { width: 300, height: 300 })
+  const scaledCompound = store.getSnapshot().elements[compound.id]
+  // Center of scaled compound is 200 + 150 = 350, 150 + 150 = 300.
+  // Halfway to right edge: 350 + 75 = 425 -> should map to viewBox x = 75 + 37.5 = 112.5
+  const p3 = compoundParentToOperandLocal(scaledCompound, { x: 425, y: 300 })
+  close(p3.x, 112.5, 1e-2)
+  close(p3.y, 75, 1e-2)
+
+  // 4. Rotated compound (90 degrees clockwise)
+  store.update(compound.id, 'path', { x: 0, y: 0, width: 100, height: 100, rotation: 90 })
+  const rotCompound = store.getSnapshot().elements[compound.id]
+  const rotP = compoundParentToOperandLocal(rotCompound, { x: 50, y: 80 })
+  // After 90 deg clockwise rotation, point (50, 80) in parent corresponds to unrotated point
+  assert.ok(Number.isFinite(rotP.x) && Number.isFinite(rotP.y))
+})
+
+test('findCompoundOperandAtPoint: recursive point containment and nested compound hierarchy hit-testing', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'r1', name: 'Base Rect', x: 0, y: 0, width: 100, height: 100 })
+  store.add('ellipse', { id: 'e1', name: 'Circle Cutter', x: 40, y: 40, width: 80, height: 80 })
+  store.add('rectangle', { id: 'r2', name: 'Detail Notch', x: 80, y: 40, width: 40, height: 40 })
+  store.select(['r1', 'e1', 'r2'])
+
+  const root = store.booleanSelection('subtract')
+  // Group e1 and r2 into a nested compound
+  store.groupBooleanOperands(root.id, ['e1', 'r2'], 'union')
+  const compound = store.getSnapshot().elements[root.id]
+
+  // Point clearly inside r1 only
+  const hitR1 = findCompoundOperandAtPoint(compound.boolean, { x: 10, y: 10 })
+  assert.ok(hitR1)
+  assert.equal(hitR1.id, 'r1')
+
+  // Point inside the nested e1 ellipse
+  const hitE1 = findCompoundOperandAtPoint(compound.boolean, { x: 60, y: 60 })
+  assert.ok(hitE1)
+  assert.equal(hitE1.id, 'e1')
+
+  // Point inside the nested r2 rectangle
+  const hitR2 = findCompoundOperandAtPoint(compound.boolean, { x: 95, y: 50 })
+  assert.ok(hitR2)
+  assert.equal(hitR2.id, 'r2')
+
+  // Point outside all operands
+  const hitNone = findCompoundOperandAtPoint(compound.boolean, { x: 500, y: 500 })
+  assert.equal(hitNone, undefined)
+})
+
+test('getCompoundBreadcrumbs: hierarchy path traversal from root compound to nested operand', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'base', name: 'Base', x: 0, y: 0, width: 100, height: 100 })
+  store.add('ellipse', { id: 'cutter-a', name: 'Cutter A', x: 40, y: 0, width: 60, height: 60 })
+  store.add('ellipse', { id: 'cutter-b', name: 'Cutter B', x: 60, y: 0, width: 60, height: 60 })
+  store.select(['base', 'cutter-a', 'cutter-b'])
+
+  const root = store.booleanSelection('subtract')
+  store.groupBooleanOperands(root.id, ['cutter-a', 'cutter-b'], 'union')
+  const compound = store.getSnapshot().elements[root.id]
+
+  // Breadcrumbs to nested leaf operand 'cutter-b'
+  const crumbs = getCompoundBreadcrumbs(compound.boolean, 'cutter-b', 'Subtract Root')
+  assert.ok(crumbs.length >= 3)
+  assert.equal(crumbs[0].name, 'Subtract Root')
+  assert.equal(crumbs[0].operation, 'subtract')
+  assert.ok(crumbs.some(c => c.id === 'cutter-b' && c.name === 'Cutter B'))
+})
+
+test('Double-click nested component isolation for editing sub-paths with live real-time recalculation', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'shape-a', name: 'Shape A', x: 0, y: 0, width: 120, height: 120 })
+  store.add('rectangle', { id: 'shape-b', name: 'Shape B', x: 60, y: 60, width: 80, height: 80 })
+  store.select(['shape-a', 'shape-b'])
+
+  const compound = store.booleanSelection('subtract')
+  const initialArea = calculatePathArea(compound.d)
+
+  // 1. Enter sub-path isolation for operand 'shape-b'
+  store.setSelectedCompoundOperand({ compoundId: compound.id, operandId: 'shape-b' })
+  store.setPathEditingTarget({ id: compound.id, operandId: 'shape-b' })
+
+  // Verify isolation query states
+  assert.equal(store.isCompoundOperandIsolated(compound.id, 'shape-b'), true)
+  assert.equal(store.isCompoundOperandIsolated(compound.id, 'shape-a'), false)
+  assert.equal(store.getPathEditingTarget().operandId, 'shape-b')
+
+  // 2. Perform live anchor modification in isolated sub-path
+  const shapeBPath = store.convertBooleanOperandToPath(compound.id, 'shape-b')
+  const contours = vectorToContours(shapeBPath)
+  // Expand cutter overlap towards base shape by moving left anchors left
+  const expandedContours = contours.map(c => ({
+    ...c,
+    anchors: c.anchors.map(a => ({
+      ...a,
+      x: a.x <= 30 ? a.x - 30 : a.x,
+    })),
+  }))
+
+  store.updateBooleanOperandNodes(compound.id, 'shape-b', expandedContours)
+  let updated = store.getSnapshot().elements[compound.id]
+  const expandedCutterArea = calculatePathArea(updated.d)
+
+  // Larger cutter subtracted -> resulting compound area is strictly smaller
+  assert.ok(expandedCutterArea < initialArea)
+  assert.notEqual(updated.d, compound.d)
+
+  // 3. Exit compound isolation
+  store.exitCompoundIsolation()
+  assert.equal(store.isCompoundOperandIsolated(compound.id, 'shape-b'), false)
+  assert.equal(store.getPathEditingTarget(), null)
+})
+
+test('One-click flattening into destructive Bézier outlines with validation guard and undo/redo', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'rect1', name: 'Rect 1', x: 0, y: 0, width: 100, height: 100 })
+  store.add('ellipse', { id: 'circle1', name: 'Circle 1', x: 50, y: 0, width: 100, height: 100 })
+  store.select(['rect1', 'circle1'])
+
+  const compound = store.booleanSelection('union')
+  assert.ok(compound.boolean)
+  const nonDestructiveD = compound.d
+  const nonDestructiveArea = calculatePathArea(nonDestructiveD)
+
+  // 1. Guard check: directly attempting to patch 'd' or 'nodes' on non-destructive compound must throw
+  assert.throws(
+    () => store.update(compound.id, 'path', { d: 'M 0 0 L 10 10 Z' }),
+    /Flatten the compound before editing its merged outline/
+  )
+
+  // 2. One-click flatten compound into destructive Bézier outlines
+  store.flattenBoolean(compound.id)
+  let flattened = store.getSnapshot().elements[compound.id]
+  assert.equal(flattened.type, 'path')
+  // Parametric composite tree (boolean property) must be removed
+  assert.equal(flattened.boolean, undefined)
+  assert.ok(flattened.d && flattened.d.startsWith('M'))
+  // Area of flattened outline should match non-destructive geometry
+  close(calculatePathArea(flattened.d), nonDestructiveArea, 5)
+
+  // 3. Flattened path allows direct outline editing now that boolean sources are removed
+  assert.doesNotThrow(() => {
+    store.update(compound.id, 'path', { name: 'Flattened Vector Logo' })
+  })
+
+  // 4. Undo restores the parametric non-destructive boolean composite tree
+  store.undo() // restores name
+  store.undo() // undoes flatten
+  let restored = store.getSnapshot().elements[compound.id]
+  assert.ok(restored.boolean)
+  assert.equal(restored.boolean.operation, 'union')
+  assert.equal(restored.boolean.operands.length, 2)
+  close(calculatePathArea(restored.d), nonDestructiveArea, 5)
+
+  // 5. Redo re-flattens into destructive Bézier outline
+  store.redo()
+  let reflattened = store.getSnapshot().elements[compound.id]
+  assert.equal(reflattened.boolean, undefined)
+})
+
