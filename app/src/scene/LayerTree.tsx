@@ -234,6 +234,8 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
   const active = useScene(store, () => store.getHistorySnapshot().active)
   const maskInfo = useScene(store, state => getMaskHierarchy(state.elements, id))
   const [expanded, setExpanded] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragPosition, setDragPosition] = useState<'before' | 'after' | 'inside' | null>(null)
   if (!node) return null
 
   const MaskModeIcon = node.mask
@@ -262,7 +264,7 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
   return (
     <div role="treeitem" aria-selected={selected} aria-expanded={hasChildren ? expanded : undefined}>
       <div
-        className={`scene-layer-row ${selected ? 'selected' : ''} ${node.mask ? 'is-mask' : ''} ${maskInfo.isMaskGroup ? 'is-mask-group' : ''} ${maskInfo.isMasked ? 'is-masked-target' : ''} ${!visible ? 'is-hidden' : ''} ${node.component ? 'is-component' : ''} ${node.component?.kind === 'master' ? 'is-master' : ''}`}
+        className={`scene-layer-row ${selected ? 'selected' : ''} ${node.mask ? 'is-mask' : ''} ${maskInfo.isMaskGroup ? 'is-mask-group' : ''} ${maskInfo.isMasked ? 'is-masked-target' : ''} ${!visible ? 'is-hidden' : ''} ${node.component ? 'is-component' : ''} ${node.component?.kind === 'master' ? 'is-master' : ''} ${isDragging ? 'is-dragging' : ''} ${dragPosition === 'before' ? 'drop-before' : dragPosition === 'after' ? 'drop-after' : dragPosition === 'inside' ? 'drop-inside' : ''}`}
         data-layer-id={id}
         data-mask-role={maskInfo.role}
         data-mask-source={node.mask ? 'true' : undefined}
@@ -270,6 +272,58 @@ const LayerRow = memo(function LayerRow({ store, id, depth }: { store: SceneStor
         data-masked-by={maskInfo.isMasked ? maskInfo.maskSource?.id : undefined}
         data-mask-mode={maskInfo.role !== 'none' ? maskInfo.mode : undefined}
         style={{ paddingLeft: 8 + depth * 12 }}
+        draggable={!locked && !active}
+        onDragStart={e => {
+          if (locked || active) return
+          e.dataTransfer.setData('text/plain', id)
+          e.dataTransfer.effectAllowed = 'move'
+          setIsDragging(true)
+        }}
+        onDragEnd={() => {
+          setIsDragging(false)
+          setDragPosition(null)
+        }}
+        onDragOver={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          const relY = e.clientY - rect.top
+          if (node.type === 'frame' && relY >= rect.height * 0.25 && relY <= rect.height * 0.75) {
+            setDragPosition('inside')
+          } else if (relY < rect.height * 0.5) {
+            setDragPosition('before')
+          } else {
+            setDragPosition('after')
+          }
+        }}
+        onDragLeave={() => {
+          setDragPosition(null)
+        }}
+        onDrop={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          const sourceId = e.dataTransfer.getData('text/plain')
+          const pos = dragPosition
+          setDragPosition(null)
+          if (!sourceId || sourceId === id) return
+          if (store.isLocked(sourceId) || store.isLocked(id)) return
+
+          if (pos === 'inside' && node.type === 'frame') {
+            store.reparent(sourceId, node.id, node.children.length)
+          } else {
+            const targetParentId = node.parentId
+            const siblings = store.getChildren(targetParentId)
+            const targetIdx = siblings.indexOf(id)
+            const insertIdx = pos === 'after' ? targetIdx + 1 : targetIdx
+            const sourceNode = store.getSnapshot().elements[sourceId]
+            if (sourceNode?.parentId === targetParentId) {
+              store.reorder(sourceId, insertIdx)
+            } else {
+              store.reparent(sourceId, targetParentId, insertIdx)
+            }
+          }
+        }}
       >
         <button
           className="layer-disclosure quiet-button"

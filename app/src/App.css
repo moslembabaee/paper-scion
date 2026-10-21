@@ -90,10 +90,23 @@ kbd { font: 9px var(--font-mono); color: var(--paper-text-secondary); padding: 2
 
 /* Scene editing uses the same quiet, precise chrome as the viewport. */
 .scene-layer-tree { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 12px; }
-.scene-layer-row { display: flex; align-items: center; min-height: 34px; margin: 2px 0; padding-right: 4px; border-radius: 4px; }
+.scene-layer-row { display: flex; align-items: center; min-height: 34px; margin: 2px 0; padding-right: 4px; border-radius: 4px; position: relative; transition: background 0.1s; }
 .scene-layer-row:hover { background: var(--paper-hover); }
 .scene-layer-row.selected { background: var(--paper-accent-soft); }
 .scene-layer-row.is-hidden .layer-select { opacity: .4; }
+.scene-layer-row.is-dragging { opacity: 0.4; }
+.scene-layer-row.drop-before::before {
+  content: ''; position: absolute; top: -2px; left: 0; right: 0; height: 2px;
+  background: #81adec; border-radius: 1px; box-shadow: 0 0 6px rgba(129, 173, 236, 0.8); z-index: 10;
+}
+.scene-layer-row.drop-after::after {
+  content: ''; position: absolute; bottom: -2px; left: 0; right: 0; height: 2px;
+  background: #81adec; border-radius: 1px; box-shadow: 0 0 6px rgba(129, 173, 236, 0.8); z-index: 10;
+}
+.scene-layer-row.drop-inside {
+  background: rgba(129, 173, 236, 0.15) !important;
+  outline: 1px dashed #81adec;
+}
 .layer-disclosure.quiet-button { width: 14px; height: 24px; flex-shrink: 0; }
 .layer-disclosure:disabled { cursor: default; }
 .layer-select { display: flex; align-items: center; flex: 1; gap: 7px; min-width: 0; padding: 6px 3px; border: 0; background: transparent; text-align: left; cursor: pointer; font-size: 10px; }

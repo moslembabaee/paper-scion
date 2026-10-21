@@ -1,7 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SceneStore } from '../src/scene/store.ts'
-import { DEFAULT_AUTO_LAYOUT, reflowAutoLayout } from '../src/scene/autoLayout.ts'
+import {
+  DEFAULT_AUTO_LAYOUT,
+  reflowAutoLayout,
+  calculateAutoLayoutReorderIndex,
+  getAutoLayoutDropIndicator,
+  findAutoLayoutDropTarget,
+  reorderAutoLayoutChild,
+  reparentToAutoLayout,
+  computeSimulatedAutoLayout,
+} from '../src/scene/autoLayout.ts'
 import { buildCSSProps, buildTailwindClasses, buildReactComponent } from '../src/tokens/codegen.ts'
 import { elementSchema, validateSchema, patchSchema } from '../src/mcp/schema.ts'
 import { sceneToSVG } from '../src/io/svg.ts'
@@ -756,6 +765,306 @@ test('layoutGapBands for wrapped flow calculates cross-axis line gaps accurately
   assert.equal(lineGapBand.y, 50)
   assert.equal(lineGapBand.height, 16)
 })
+
+test('calculateAutoLayoutReorderIndex computes exact insertion slots for horizontal, vertical, and wrapped flows', () => {
+  const store = new SceneStore()
+  // Horizontal frame
+  store.add('frame', {
+    id: 'f-horiz',
+    width: 400,
+    height: 150,
+    layout: layout({ direction: 'horizontal', gap: 10, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+  })
+  store.add('rectangle', { id: 'h1', parentId: 'f-horiz', width: 40, height: 40 }) // x=10, cx=30
+  store.add('rectangle', { id: 'h2', parentId: 'f-horiz', width: 60, height: 40 }) // x=60, cx=90
+  store.add('rectangle', { id: 'h3', parentId: 'f-horiz', width: 80, height: 40 }) // x=130, cx=170
+
+  const state = store.getSnapshot()
+  const frameHoriz = state.elements['f-horiz']
+
+  // Dragging h2 (siblings = h1 cx=30, h3 cx=170)
+  // Left of h1 cx=30 => index 0
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'h2', { x: 20, y: 30 }), 0)
+  // Between h1 (cx=30) and h3 (cx=170) => index 1
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'h2', { x: 100, y: 30 }), 1)
+  // Right of h3 cx=170 => index 2
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'h2', { x: 200, y: 30 }), 2)
+
+  // Dragging external element into frameHoriz
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'external', { x: 15, y: 30 }), 0)
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'external', { x: 60, y: 30 }), 1)
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'external', { x: 130, y: 30 }), 2)
+  assert.equal(calculateAutoLayoutReorderIndex(frameHoriz, state.elements, 'external', { x: 250, y: 30 }), 3)
+
+  // Vertical frame
+  store.add('frame', {
+    id: 'f-vert',
+    width: 150,
+    height: 400,
+    layout: layout({ direction: 'vertical', gap: 10, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+  })
+  store.add('rectangle', { id: 'v1', parentId: 'f-vert', width: 40, height: 40 }) // y=10, cy=30
+  store.add('rectangle', { id: 'v2', parentId: 'f-vert', width: 40, height: 60 }) // y=60, cy=90
+  store.add('rectangle', { id: 'v3', parentId: 'f-vert', width: 40, height: 80 }) // y=130, cy=170
+
+  const stateVert = store.getSnapshot()
+  const frameVert = stateVert.elements['f-vert']
+
+  // Dragging v1 down (siblings = v2 cy=90, v3 cy=170)
+  assert.equal(calculateAutoLayoutReorderIndex(frameVert, stateVert.elements, 'v1', { x: 30, y: 50 }), 0)
+  assert.equal(calculateAutoLayoutReorderIndex(frameVert, stateVert.elements, 'v1', { x: 30, y: 120 }), 1)
+  assert.equal(calculateAutoLayoutReorderIndex(frameVert, stateVert.elements, 'v1', { x: 30, y: 200 }), 2)
+
+  // Empty frame returns 0
+  store.add('frame', { id: 'f-empty', width: 100, height: 100, layout: layout() })
+  assert.equal(calculateAutoLayoutReorderIndex(store.getSnapshot().elements['f-empty'], store.getSnapshot().elements, 'any', { x: 50, y: 50 }), 0)
+})
+
+test('getAutoLayoutDropIndicator generates accurate insertion bars with screen and world geometry', () => {
+  const store = new SceneStore()
+  store.add('frame', {
+    id: 'f',
+    x: 50,
+    y: 50,
+    width: 300,
+    height: 100,
+    layout: layout({ direction: 'horizontal', gap: 12, padding: { top: 15, right: 15, bottom: 15, left: 15 } }),
+  })
+  store.add('rectangle', { id: 'r1', parentId: 'f', width: 60, height: 50 })
+  store.add('rectangle', { id: 'r2', parentId: 'f', width: 80, height: 50 })
+
+  const state = store.getSnapshot()
+  const frame = state.elements['f']
+
+  // Indicator at index 0 (before r1)
+  const ind0 = getAutoLayoutDropIndicator(frame, state.elements, 0, state)
+  assert.ok(ind0)
+  assert.equal(ind0.axis, 'vertical')
+  assert.equal(ind0.insertIndex, 0)
+  assert.equal(ind0.local.x, 15) // at left padding
+  assert.equal(ind0.world.x, 65) // 50 + 15
+  assert.equal(ind0.world.y, 65) // 50 + 15
+
+  // Indicator at index 1 (between r1 and r2: r1 ends at 15+60=75, r2 starts at 75+12=87. Midpoint = 81)
+  const ind1 = getAutoLayoutDropIndicator(frame, state.elements, 1, state)
+  assert.ok(ind1)
+  assert.equal(ind1.axis, 'vertical')
+  assert.equal(ind1.insertIndex, 1)
+  assert.equal(ind1.local.x, 80) // (75 + 87)/2 - 1 = 80
+  assert.equal(ind1.world.x, 130) // 50 + 80
+
+  // Indicator at index 2 (after r2: r2 ends at 87+80=167)
+  const ind2 = getAutoLayoutDropIndicator(frame, state.elements, 2, state)
+  assert.ok(ind2)
+  assert.equal(ind2.axis, 'vertical')
+  assert.equal(ind2.insertIndex, 2)
+  assert.equal(ind2.local.x, 173) // 167 + 12/2 = 173
+  assert.equal(ind2.world.x, 223) // 50 + 173
+})
+
+test('findAutoLayoutDropTarget selects deepest containing auto-layout frame and computes drop position', () => {
+  const store = new SceneStore()
+  // Outer frame at (0, 0) size 400x300
+  store.add('frame', {
+    id: 'outer',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 300,
+    layout: layout({ direction: 'horizontal', gap: 10, padding: { top: 20, right: 20, bottom: 20, left: 20 } }),
+  })
+  // Inner frame inside outer at x=20, y=20 (local), size 150x150
+  store.add('frame', {
+    id: 'inner',
+    parentId: 'outer',
+    width: 150,
+    height: 150,
+    layout: layout({ direction: 'vertical', gap: 8, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+  })
+  store.add('rectangle', { id: 'inner-child', parentId: 'inner', width: 100, height: 40 })
+  store.add('rectangle', { id: 'outer-sibling', parentId: 'outer', width: 100, height: 100 })
+
+  const state = store.getSnapshot()
+
+  // Point inside inner frame: (x=50, y=50) in world coordinates
+  const targetInsideInner = findAutoLayoutDropTarget(state, { x: 50, y: 50 }, ['dragged'])
+  assert.ok(targetInsideInner)
+  assert.equal(targetInsideInner.frameId, 'inner')
+
+  // Point inside outer frame but outside inner frame: (x=250, y=50)
+  const targetInsideOuter = findAutoLayoutDropTarget(state, { x: 250, y: 50 }, ['dragged'])
+  assert.ok(targetInsideOuter)
+  assert.equal(targetInsideOuter.frameId, 'outer')
+
+  // Point outside any frame: (x=500, y=500)
+  const targetOutside = findAutoLayoutDropTarget(state, { x: 500, y: 500 }, ['dragged'])
+  assert.equal(targetOutside, null)
+})
+
+test('computeSimulatedAutoLayout non-destructively predicts bounding box and reflow before committing', () => {
+  const store = new SceneStore()
+  store.add('frame', {
+    id: 'f-hug',
+    width: 100,
+    height: 100,
+    layout: layout({ direction: 'horizontal', gap: 10, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+    sizing: sizing('hug', 'hug'),
+  })
+  store.add('rectangle', { id: 'r1', parentId: 'f-hug', width: 40, height: 30 })
+  store.add('rectangle', { id: 'r2', parentId: 'f-hug', width: 80, height: 60 })
+
+  const snapshot = store.getSnapshot()
+  // Initial width: 10 + 40 + 10 + 80 + 10 = 150, height = 10 + 60 + 10 = 80
+  assert.equal(snapshot.elements['f-hug'].width, 150)
+  assert.equal(snapshot.elements['f-hug'].height, 80)
+  assert.equal(snapshot.elements['r1'].x, 10)
+  assert.equal(snapshot.elements['r2'].x, 60)
+
+  // Simulate reordering r2 to index 0
+  const sim = computeSimulatedAutoLayout(snapshot.elements, snapshot.rootIds, 'f-hug', 'r2', 0)
+  assert.equal(sim.frameBounds.width, 150)
+  assert.equal(sim.frameBounds.height, 80)
+  assert.equal(sim.elements['r2'].x, 10)
+  assert.equal(sim.elements['r1'].x, 100) // 10 + 80 + 10 = 100
+
+  // Verify that the original store snapshot was unchanged
+  assert.equal(snapshot.elements['r1'].x, 10)
+  assert.equal(snapshot.elements['r2'].x, 60)
+})
+
+test('real-time bounding box recalculation in wrapped hug frames during hierarchy reordering', () => {
+  const store = new SceneStore()
+  // Fixed width 150, hug height
+  store.add('frame', {
+    id: 'f-wrap',
+    width: 150,
+    height: 100,
+    layout: layout({ wrap: 'wrap', gap: 10, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+    sizing: sizing('fixed', 'hug'),
+  })
+  // Inner width = 130
+  store.add('rectangle', { id: 'a', parentId: 'f-wrap', width: 80, height: 40 })
+  store.add('rectangle', { id: 'b', parentId: 'f-wrap', width: 70, height: 40 })
+  store.add('rectangle', { id: 'c', parentId: 'f-wrap', width: 50, height: 30 })
+
+  // In order [a, b, c]:
+  // Line 1: a (80). b (70) overflows (80 + 10 + 70 = 160 > 130) -> Line 2.
+  // Line 2: b (70). c (50) overflows (70 + 10 + 50 = 130? 70+10+50 = 130 <= 130 fits!)
+  // Height = 10 + 40 (line 1) + 10 (gap) + 40 (line 2 max height) + 10 = 110
+  assert.equal(node(store, 'f-wrap').height, 110)
+
+  // Reorder to [a, c, b]:
+  // Line 1: a (80) + c (50) + gap (10) = 140 > 130 => c overflows to Line 2!
+  // Line 2: c (50) + b (70) + gap (10) = 130 <= 130 => fits!
+  // Height stays 110.
+  // Now add an item d of width 60, height 50
+  store.add('rectangle', { id: 'd', parentId: 'f-wrap', width: 60, height: 50 })
+  const height4Items = node(store, 'f-wrap').height
+
+  // In a transaction, reorder d to start:
+  store.beginTransaction('Reorder child')
+  store.reorder('d', 0)
+  const heightReordered = node(store, 'f-wrap').height
+  assert.ok(heightReordered > 0)
+  store.endTransaction()
+
+  // Undo cleanly restores original height
+  store.undo()
+  assert.equal(node(store, 'f-wrap').height, height4Items)
+  store.redo()
+  assert.equal(node(store, 'f-wrap').height, heightReordered)
+})
+
+test('real-time bounding box recalculation in nested hug frames propagates up the hierarchy', () => {
+  const store = new SceneStore()
+  // Outer frame: hug width and height
+  store.add('frame', {
+    id: 'outer',
+    width: 100,
+    height: 100,
+    layout: layout({ direction: 'horizontal', gap: 15, padding: { top: 10, right: 10, bottom: 10, left: 10 } }),
+    sizing: sizing('hug', 'hug'),
+  })
+  // Inner frame: hug width and height
+  store.add('frame', {
+    id: 'inner',
+    parentId: 'outer',
+    width: 50,
+    height: 50,
+    layout: layout({ direction: 'horizontal', gap: 8, padding: { top: 5, right: 5, bottom: 5, left: 5 } }),
+    sizing: sizing('hug', 'hug'),
+  })
+  store.add('rectangle', { id: 'in1', parentId: 'inner', width: 30, height: 20 })
+  store.add('rectangle', { id: 'out-sibling', parentId: 'outer', width: 40, height: 40 })
+
+  // Inner width = 5 + 30 + 5 = 40, height = 5 + 20 + 5 = 30
+  // Outer width = 10 + 40 (inner) + 15 (gap) + 40 (out-sibling) + 10 = 115
+  // Outer height = 10 + max(30, 40) + 10 = 60
+  assert.equal(node(store, 'inner').width, 40)
+  assert.equal(node(store, 'outer').width, 115)
+  assert.equal(node(store, 'outer').height, 60)
+
+  // Dragging / reparenting new item into inner frame
+  store.beginTransaction('Add child to inner')
+  store.add('rectangle', { id: 'in2', parentId: 'inner', width: 50, height: 35 })
+  // Inner width now = 5 + 30 + 8 + 50 + 5 = 98, height = 5 + 35 + 5 = 45
+  // Outer width now = 10 + 98 + 15 + 40 + 10 = 173!
+  // Outer height now = 10 + max(45, 40) + 10 = 65!
+  assert.equal(node(store, 'inner').width, 98)
+  assert.equal(node(store, 'inner').height, 45)
+  assert.equal(node(store, 'outer').width, 173)
+  assert.equal(node(store, 'outer').height, 65)
+  store.endTransaction()
+
+  // Reorder in1 and in2 inside inner
+  store.beginTransaction('Reorder inner children')
+  store.reorder('in2', 0)
+  assert.equal(node(store, 'in2').x, 5)
+  assert.equal(node(store, 'in1').x, 5 + 50 + 8) // 63
+  assert.equal(node(store, 'inner').width, 98)
+  assert.equal(node(store, 'outer').width, 173)
+  store.endTransaction()
+
+  // Reparent in2 out of inner to canvas
+  store.beginTransaction('Reparent to canvas')
+  store.reparent('in2', null)
+  // Inner frame shrinks back to in1 alone: width = 40, height = 30
+  // Outer frame shrinks back: width = 115, height = 60
+  assert.equal(node(store, 'inner').width, 40)
+  assert.equal(node(store, 'outer').width, 115)
+  assert.equal(node(store, 'outer').height, 60)
+  store.endTransaction()
+})
+
+test('reorderAutoLayoutChild and reparentToAutoLayout execute atomically with validation', () => {
+  const store = new SceneStore()
+  store.add('frame', {
+    id: 'f1',
+    width: 200,
+    height: 100,
+    layout: layout({ direction: 'horizontal', gap: 10 }),
+  })
+  store.add('rectangle', { id: 'a', parentId: 'f1', width: 40, height: 30 })
+  store.add('rectangle', { id: 'b', parentId: 'f1', width: 50, height: 30 })
+  store.add('rectangle', { id: 'free', width: 60, height: 40 })
+
+  // Reorder valid
+  assert.equal(reorderAutoLayoutChild(store, 'f1', 'b', 0), true)
+  assert.deepEqual(node(store, 'f1').children, ['b', 'a'])
+
+  // Reorder invalid child
+  assert.equal(reorderAutoLayoutChild(store, 'f1', 'unknown', 0), false)
+  // Reorder to same index
+  assert.equal(reorderAutoLayoutChild(store, 'f1', 'b', 0), false)
+
+  // Reparent free into f1 at index 1
+  assert.equal(reparentToAutoLayout(store, 'free', 'f1', 1), true)
+  assert.deepEqual(node(store, 'f1').children, ['b', 'free', 'a'])
+
+  // Reparent cycle prevention: cannot reparent f1 into free
+  assert.equal(reparentToAutoLayout(store, 'f1', 'free', 0), false)
+})
+
 
 
 
