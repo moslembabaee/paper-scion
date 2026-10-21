@@ -2,6 +2,7 @@ import type { SceneDocument, SceneElement } from '../scene/types.ts'
 import { parsePath, type PathContour } from '../scene/pathGeometry.ts'
 import { pathToCubicContour } from '../morph/normalize.ts'
 import { prepareMorph, interpolateMorph, type PreparedMorph } from '../morph/interpolate.ts'
+import { contourArea, contourBounds, contourCentroid, cubicArcLength } from '../morph/geometry.ts'
 import { DEFAULT_MORPH_CONFIG } from '../morph/presets.ts'
 import type { CubicContour, MorphConfig } from '../morph/types.ts'
 import type { PrototypeTransition, SpringParameters } from './types.ts'
@@ -114,17 +115,51 @@ export function elementToSvgPath(element: SceneElement): { d: string; viewBox: r
       viewBox: [0, 0, element.width, element.height],
     }
   }
+  if (element.type === 'frame') {
+    return {
+      d: rectToCubicPath(element.width, element.height, element.cornerRadius),
+      viewBox: [0, 0, element.width, element.height],
+    }
+  }
   return null
 }
 
-/** Safely parse path contours into cubic contours for morphing */
+/** Safely parse path contours into cubic contours for morphing, normalized to element dimensions */
 export function elementToCubicContours(element: SceneElement): CubicContour[] | null {
   const svg = elementToSvgPath(element)
   if (!svg || !svg.d.trim()) return null
   try {
     const contours: PathContour[] = parsePath(svg.d)
     if (!contours.length) return null
-    return contours.map(pathToCubicContour)
+    const cubicContours = contours.map(pathToCubicContour)
+
+    // Normalize path viewBox coordinate space to element width / height if needed
+    if (element.type === 'path') {
+      const [minX, minY, vbWidth, vbHeight] = element.viewBox
+      const targetW = element.width, targetH = element.height
+      if (vbWidth > 0 && vbHeight > 0 && (minX !== 0 || minY !== 0 || vbWidth !== targetW || vbHeight !== targetH)) {
+        const sx = targetW / vbWidth, sy = targetH / vbHeight
+        return cubicContours.map(c => {
+          const segments = c.segments.map(seg => ({
+            p0: { x: (seg.p0.x - minX) * sx, y: (seg.p0.y - minY) * sy },
+            p1: { x: (seg.p1.x - minX) * sx, y: (seg.p1.y - minY) * sy },
+            p2: { x: (seg.p2.x - minX) * sx, y: (seg.p2.y - minY) * sy },
+            p3: { x: (seg.p3.x - minX) * sx, y: (seg.p3.y - minY) * sy },
+          }))
+          const segmentLengths = segments.map(seg => cubicArcLength(seg))
+          return {
+            ...c,
+            segments,
+            bounds: contourBounds(segments),
+            centroid: contourCentroid(segments),
+            area: contourArea(segments),
+            arcLength: segmentLengths.reduce((sum, len) => sum + len, 0),
+            segmentLengths,
+          }
+        })
+      }
+    }
+    return cubicContours
   } catch {
     return null
   }
@@ -263,7 +298,7 @@ export function computeScreenDiff(
   const fromFrame = elements[fromFrameId]
   const toFrame = elements[toFrameId]
 
-  const pairs = matchedLayers(elements, fromFrameId, toFrameId)
+  const pairs = [...matchedLayers(elements, fromFrameId, toFrameId)]
   const matchedFromIds = new Set(pairs.map(p => p.from.id))
   const matchedToIds = new Set(pairs.map(p => p.to.id))
 
@@ -284,6 +319,20 @@ export function computeScreenDiff(
 
   const fromElements = collectDescendants(fromFrameId)
   const toElements = collectDescendants(toFrameId)
+
+  // Cross-match unmatched vector layers sharing the same name for morphing
+  const isVectorType = (type: string) => type === 'rectangle' || type === 'ellipse' || type === 'path'
+  const unmatchedFrom = fromElements.filter(el => !matchedFromIds.has(el.id) && isVectorType(el.type))
+  const unmatchedTo = toElements.filter(el => !matchedToIds.has(el.id) && isVectorType(el.type))
+
+  for (const toEl of unmatchedTo) {
+    const candidate = unmatchedFrom.find(fromEl => fromEl.name === toEl.name && !matchedFromIds.has(fromEl.id))
+    if (candidate) {
+      pairs.push({ from: candidate, to: toEl })
+      matchedFromIds.add(candidate.id)
+      matchedToIds.add(toEl.id)
+    }
+  }
 
   const exiting = fromElements.filter(el => !matchedFromIds.has(el.id))
   const entering = toElements.filter(el => !matchedToIds.has(el.id))
@@ -369,7 +418,8 @@ export function evaluateSmartMatrix(
   parent?: { from: SceneElement; to: SceneElement },
   fitRatio = 1,
   scrollOffset = 0,
-  scrollLeft = 0
+  scrollLeft = 0,
+  useTRS = true
 ): string {
   const root = !parent
   const radiansFrom = (root ? 0 : from.rotation) * Math.PI / 180
@@ -394,6 +444,38 @@ export function evaluateSmartMatrix(
 
   const wRatioFrom = from.width / to.width
   const hRatioFrom = from.height / to.height
+
+  if (useTRS && !root && (from.rotation !== to.rotation || wRatioFrom !== 1 || hRatioFrom !== 1)) {
+    const rawRotDiff = (to.rotation - from.rotation) % 360
+    const rotDiff = rawRotDiff > 180 ? rawRotDiff - 360 : rawRotDiff < -180 ? rawRotDiff + 360 : rawRotDiff
+    const rot = (from.rotation + rotDiff * t) * Math.PI / 180
+    const cosR = Math.cos(rot), sinR = Math.sin(rot)
+
+    const curWidth = from.width + (to.width - from.width) * t
+    const curHeight = from.height + (to.height - from.height) * t
+    const curCx = curWidth / 2
+    const curCy = curHeight / 2
+
+    const sx = (wRatioFrom + (1 - wRatioFrom) * t) * (pxFrom + (pxTo - pxFrom) * t)
+    const sy = (hRatioFrom + (1 - hRatioFrom) * t) * (pyFrom + (pyTo - pyFrom) * t)
+
+    const rawX = from.x + (to.x - from.x) * t
+    const rawY = from.y + (to.y - from.y) * t
+    const x = rawX + curCx - cosR * curCx + sinR * curCy
+    const y = rawY + curCy - sinR * curCx - cosR * curCy
+
+    const curPx = pxFrom + (pxTo - pxFrom) * t
+    const curPy = pyFrom + (pyTo - pyFrom) * t
+    const tx = x * curPx - to.x
+    const ty = y * curPy - to.y
+
+    const a = cosR * sx
+    const b = sinR * sx
+    const c = -sinR * sy
+    const d = cosR * sy
+
+    return `matrix(${Number(a.toFixed(6))},${Number(b.toFixed(6))},${Number(c.toFixed(6))},${Number(d.toFixed(6))},${Number(tx.toFixed(4))},${Number(ty.toFixed(4))})`
+  }
 
   // Start matrix components
   const a0 = cosFrom * wRatioFrom * pxFrom
@@ -423,39 +505,61 @@ export function evaluateSmartMatrix(
 }
 
 /** Linear color interpolation helper */
-export function interpolateColor(colorA: string | null, colorB: string | null, t: number): string {
+export function interpolateColor(colorA: string | null | undefined, colorB: string | null | undefined, t: number): string {
   if (!colorA && !colorB) return 'transparent'
-  if (!colorA) return colorB!
-  if (!colorB) return colorA
+  const isTransparent = (c: string | null | undefined) => !c || c === 'transparent' || c === 'none'
+  if (isTransparent(colorA) && isTransparent(colorB)) return 'transparent'
 
-  const parse = (c: string) => {
-    if (c.startsWith('#')) {
-      const hex = c.slice(1)
+  const parse = (c: string | null | undefined): [number, number, number, number] => {
+    if (isTransparent(c)) return [0, 0, 0, 0]
+    const s = c!.trim().toLowerCase()
+    if (s.startsWith('#')) {
+      const hex = s.slice(1)
       if (hex.length === 3) {
         return [parseInt(hex[0] + hex[0], 16), parseInt(hex[1] + hex[1], 16), parseInt(hex[2] + hex[2], 16), 1]
+      }
+      if (hex.length === 4) {
+        return [
+          parseInt(hex[0] + hex[0], 16),
+          parseInt(hex[1] + hex[1], 16),
+          parseInt(hex[2] + hex[2], 16),
+          parseInt(hex[3] + hex[3], 16) / 255,
+        ]
       }
       if (hex.length === 6) {
         return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), 1]
       }
       if (hex.length === 8) {
-        return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16), parseInt(hex.slice(6, 8), 16) / 255]
+        return [
+          parseInt(hex.slice(0, 2), 16),
+          parseInt(hex.slice(2, 4), 16),
+          parseInt(hex.slice(4, 6), 16),
+          parseInt(hex.slice(6, 8), 16) / 255,
+        ]
       }
     }
-    const match = c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
-    if (match) {
-      return [Number(match[1]), Number(match[2]), Number(match[3]), match[4] !== undefined ? Number(match[4]) : 1]
+    const rgbaMatch = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+    if (rgbaMatch) {
+      return [Number(rgbaMatch[1]), Number(rgbaMatch[2]), Number(rgbaMatch[3]), rgbaMatch[4] !== undefined ? Number(rgbaMatch[4]) : 1]
     }
     return [0, 0, 0, 1]
   }
 
-  const [r0, g0, b0, a0] = parse(colorA)
-  const [r1, g1, b1, a1] = parse(colorB)
-  const clampedT = Math.max(0, Math.min(1, t))
+  let [r0, g0, b0, a0] = parse(colorA)
+  let [r1, g1, b1, a1] = parse(colorB)
 
-  const r = Math.round(r0 + (r1 - r0) * clampedT)
-  const g = Math.round(g0 + (g1 - g0) * clampedT)
-  const b = Math.round(b0 + (b1 - b0) * clampedT)
-  const a = Number((a0 + (a1 - a0) * clampedT).toFixed(3))
+  // Preserve RGB when fading to/from transparent so the color does not turn gray
+  if (isTransparent(colorA) && !isTransparent(colorB)) {
+    r0 = r1; g0 = g1; b0 = b1
+  } else if (!isTransparent(colorA) && isTransparent(colorB)) {
+    r1 = r0; g1 = g0; b1 = b0
+  }
+
+  const clampedT = Math.max(0, Math.min(1, t))
+  const r = Math.min(255, Math.max(0, Math.round(r0 + (r1 - r0) * clampedT)))
+  const g = Math.min(255, Math.max(0, Math.round(g0 + (g1 - g0) * clampedT)))
+  const b = Math.min(255, Math.max(0, Math.round(b0 + (b1 - b0) * clampedT)))
+  const a = Math.min(1, Math.max(0, Number((a0 + (a1 - a0) * clampedT).toFixed(3))))
 
   return `rgba(${r}, ${g}, ${b}, ${a})`
 }
@@ -491,4 +595,95 @@ export function springPhysicsMetrics(spring: SpringParameters = DEFAULT_SPRING):
     overshootPercent: Number(overshootPercent.toFixed(1)),
     isUnderdamped,
   }
+}
+
+export interface MorphTrajectory {
+  readonly fromPoint: { x: number; y: number }
+  readonly toPoint: { x: number; y: number }
+  readonly path: string
+}
+
+function mapPointToFrame(p: { x: number; y: number }, el: SceneElement): { x: number; y: number } {
+  const cx = el.width / 2, cy = el.height / 2
+  const rad = (el.rotation * Math.PI) / 180
+  const cos = Math.cos(rad), sin = Math.sin(rad)
+  const relX = p.x - cx, relY = p.y - cy
+  return {
+    x: el.x + cx + cos * relX - sin * relY,
+    y: el.y + cy + sin * relX + cos * relY,
+  }
+}
+
+/** Compute trajectory lines connecting corresponding vertices/centroids between from and to elements */
+export function computeMorphTrajectories(
+  pair: SmartMatchedPair,
+  sampleCount = 8
+): MorphTrajectory[] {
+  const morph = pair.geometryDiff.preparedMorph
+  if (!morph) return []
+  const trajectories: MorphTrajectory[] = []
+  const countA = morph.shapeA.contours.length
+  const countB = morph.shapeB.contours.length
+  const contourCount = Math.min(countA, countB)
+
+  for (let c = 0; c < contourCount; c++) {
+    const contourA = morph.shapeA.contours[c]
+    const contourB = morph.shapeB.contours[c]
+    const segCount = Math.min(contourA.segments.length, contourB.segments.length)
+    if (segCount === 0) continue
+
+    const step = Math.max(1, Math.floor(segCount / sampleCount))
+    for (let s = 0; s < segCount; s += step) {
+      const pA = contourA.segments[s].p0
+      const pB = contourB.segments[s].p0
+      const pAFrame = mapPointToFrame(pA, pair.from)
+      const pBFrame = mapPointToFrame(pB, pair.to)
+      const path = `M ${pAFrame.x.toFixed(2)} ${pAFrame.y.toFixed(2)} L ${pBFrame.x.toFixed(2)} ${pBFrame.y.toFixed(2)}`
+      trajectories.push({
+        fromPoint: pAFrame,
+        toPoint: pBFrame,
+        path,
+      })
+    }
+  }
+  return trajectories
+}
+
+export interface SpringPhysicsState {
+  readonly position: number
+  readonly velocity: number
+}
+
+/** Numerical step for spring micro-interactions (e.g. interactive puck, live drag feedback) */
+export function springMicroInteractionStep(
+  state: SpringPhysicsState,
+  target: number,
+  spring: SpringParameters = DEFAULT_SPRING,
+  dtSeconds = 1 / 60
+): SpringPhysicsState {
+  const m = Math.max(0.01, spring.mass)
+  const k = spring.stiffness
+  const c = spring.damping
+
+  const dt = Math.max(0.001, Math.min(0.064, dtSeconds))
+  const fSpring = -k * (state.position - target)
+  const fDamping = -c * state.velocity
+  const acceleration = (fSpring + fDamping) / m
+
+  const nextVelocity = state.velocity + acceleration * dt
+  const nextPosition = state.position + nextVelocity * dt
+
+  return {
+    position: nextPosition,
+    velocity: nextVelocity,
+  }
+}
+
+export function isSpringSettled(
+  state: SpringPhysicsState,
+  target: number,
+  posTolerance = 0.001,
+  velTolerance = 0.01
+): boolean {
+  return Math.abs(state.position - target) <= posTolerance && Math.abs(state.velocity) <= velTolerance
 }
