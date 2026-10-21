@@ -177,7 +177,7 @@ export function applyConstraintsToChildren(
       updatedChild.children &&
       updatedChild.children.length > 0 &&
       !updatedChild.layout &&
-      (updatedChild.width !== child.width || updatedChild.height !== child.height)
+      (updatedChild.width !== baselineChild.width || updatedChild.height !== baselineChild.height)
     ) {
       const childFrom: FrameDimensions = {
         width: baselineChild.width,

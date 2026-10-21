@@ -2,10 +2,11 @@ import { effectFilterMarkup } from '../tokens/effects'
 import { memo, useId, useMemo, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import type { SceneStore } from './store'
-import type { BooleanOperation, SceneElement } from './types'
+import type { BooleanOperation, FrameElement, SceneElement } from './types'
 import { useScene } from './useScene'
 import { ShapeShader } from '../shaders/ShapeShader'
 import { frameMask, maskPathData, maskFillRule, isVectorMask, isAlphaMask, isLuminanceMask, isMaskInverted, isMaskIsolated } from './maskGeometry'
+import { computeColumnIntervals, computeRowIntervals } from './layoutGridGeometry'
 import { compileTypographyStyles, embeddedFontCSS, resolveTextPathD, textPathOffset } from './typography'
 import { createCurvePath } from './textOnPath'
 import { textMarkup } from './textMarkup'
@@ -39,6 +40,107 @@ function BooleanCanvasPreview({ store, parentId }: { store: SceneStore; parentId
     </div>
     <svg viewBox={node.viewBox.join(' ')} preserveAspectRatio="none"><path d={node.d} fillRule={node.fillRule} vectorEffect="non-scaling-stroke" /></svg>
   </div>
+}
+
+function FrameLayoutGridsOverlay({ node }: { node: FrameElement }) {
+  const visibleGrids = (node.layoutGrids ?? []).filter(g => g.visible)
+  if (visibleGrids.length === 0) return null
+
+  return (
+    <div
+      className="scene-frame-layout-grids"
+      data-testid={`layout-grids-${node.id}`}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        pointerEvents: 'none',
+        overflow: 'hidden',
+        borderRadius: node.cornerRadius,
+        zIndex: 1,
+      }}
+      aria-hidden="true"
+    >
+      {visibleGrids.map(grid => {
+        if (grid.type === 'columns') {
+          const cols = computeColumnIntervals(node.width, grid)
+          return (
+            <svg
+              key={grid.id}
+              className="layout-grid-columns"
+              width="100%"
+              height="100%"
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+            >
+              {cols.map(col => (
+                <rect
+                  key={col.index}
+                  x={col.x}
+                  y={0}
+                  width={col.width}
+                  height={node.height}
+                  fill={grid.color}
+                />
+              ))}
+            </svg>
+          )
+        }
+        if (grid.type === 'rows') {
+          const rows = computeRowIntervals(node.height, grid)
+          return (
+            <svg
+              key={grid.id}
+              className="layout-grid-rows"
+              width="100%"
+              height="100%"
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+            >
+              {rows.map(row => (
+                <rect
+                  key={row.index}
+                  x={0}
+                  y={row.y}
+                  width={node.width}
+                  height={row.height}
+                  fill={grid.color}
+                />
+              ))}
+            </svg>
+          )
+        }
+        if (grid.type === 'grid') {
+          const size = Math.max(8, grid.sectionSize ?? 120)
+          const patternId = `grid-pattern-${grid.id}`
+          return (
+            <svg
+              key={grid.id}
+              className="layout-grid-modular"
+              width="100%"
+              height="100%"
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+            >
+              <defs>
+                <pattern
+                  id={patternId}
+                  width={size}
+                  height={size}
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d={`M ${size} 0 L 0 0 0 ${size}`}
+                    fill="none"
+                    stroke={grid.color}
+                    strokeWidth="1"
+                  />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+            </svg>
+          )
+        }
+        return null
+      })}
+    </div>
+  )
 }
 
 function Paint({ node, pathD, paintId, activeShader }: { node: SceneElement; pathD: string; paintId: string; activeShader?: ShaderPaint | null }) {
@@ -127,6 +229,7 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
   const mask = useScene(store, state => { const frame = state.elements[id]; return frame?.type === 'frame' ? frameMask(state.elements, frame) : undefined })
   const maskSelected = useScene(store, state => !!mask && state.selection.includes(mask.id))
   const selected = useScene(store, state => state.selection.includes(id))
+  const effectiveThemeMode = useScene(store, state => getEffectiveThemeMode(id, state.elements, state.styleLibrary.activeThemeId))
   const previewSource = useSyncExternalStore(store.subscribeBooleanPreview, () => !presentation && !!store.getBooleanPreview()?.sourceIds.includes(id), () => false)
   const effects = node?.style.effects
   const effectMarkup = useMemo(() => effects ? effectFilterMarkup(effects, effectId) : '', [effects, effectId])
@@ -142,7 +245,6 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
   const hasEffects = node.style.effects?.some(effect => effect.enabled)
   const gradient = node.style.gradient && node.style.gradient.enabled !== false ? node.style.gradient : null
   const activeShader = node.style.shader ?? (gradient && (gradient.linkToShader || gradient.type === 'angular') ? gradientToShaderPaint(gradient) : null)
-  const effectiveThemeMode = useScene(store, state => getEffectiveThemeMode(id, state.elements, state.styleLibrary.activeThemeId))
   const isModeOverridden = Boolean(node.themeMode || (node.component?.kind === 'instance' && node.component.overrides?.themeMode))
   const frameStyle: CSSProperties | undefined = isFrame ? {
     background: activeShader ? undefined : gradient ? gradientToCSS(gradient) : node.style.fill ?? undefined, borderRadius: node.cornerRadius,
@@ -287,6 +389,9 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
           ))}
           {!presentation && <BooleanCanvasPreview store={store} parentId={id} />}
         </div>
+      )}
+      {isFrame && !presentation && node.layoutGrids && node.layoutGrids.length > 0 && (
+        <FrameLayoutGridsOverlay node={node} />
       )}
       {isFrame && mask && !presentation && (mask.mask?.showOutline || maskSelected || isMaskIsolated(mask)) && (
         <svg className={`scene-mask-outline ${isMaskIsolated(mask) ? 'is-isolated' : ''}`} viewBox={`0 0 ${node.width} ${node.height}`} preserveAspectRatio="none" aria-hidden="true">

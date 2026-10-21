@@ -1,0 +1,228 @@
+/* Responsive Pinning Constraints Inspector Styles */
+.constraints-inspector {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.constraints-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.constraints-body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+/* 2D Pinning Interactive Box */
+.constraints-box-widget {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  background: var(--paper-input, #181818);
+  border: 1px dashed var(--paper-border, #333);
+  border-radius: 4px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.constraints-box-inner {
+  width: 24px;
+  height: 24px;
+  background: rgba(237, 235, 225, 0.08);
+  border: 1px solid var(--paper-border, #444);
+  border-radius: 2px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.constraints-box-inner.center-active {
+  background: rgba(129, 173, 236, 0.18);
+  border-color: #81adec;
+}
+
+.constraints-pin {
+  position: absolute;
+  background: #444;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  transition: background-color 0.12s, box-shadow 0.12s;
+}
+
+.constraints-pin:hover {
+  background: #81adec;
+}
+
+.constraints-pin.active {
+  background: #81adec;
+  box-shadow: 0 0 4px rgba(129, 173, 236, 0.6);
+}
+
+/* Pin positions */
+.constraints-pin.pin-top {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+}
+
+.constraints-pin.pin-bottom {
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 14px;
+}
+
+.constraints-pin.pin-left {
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  width: 14px;
+}
+
+.constraints-pin.pin-right {
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 2px;
+  width: 14px;
+}
+
+.constraints-center-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #555;
+}
+
+.constraints-center-dot.active {
+  background: #81adec;
+}
+
+.constraints-controls {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.constraints-controls .property-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.constraints-controls .property-select > span {
+  color: var(--paper-text-secondary);
+  font-size: 10px;
+  width: 60px;
+}
+
+.constraints-controls .property-select select {
+  flex: 1;
+  padding: 3px 6px;
+  background: var(--paper-input);
+  border: 1px solid var(--paper-border);
+  border-radius: 4px;
+  color: var(--paper-text);
+  font-size: 11px;
+}
+
+/* Layout Grids Inspector Styles */
+.layout-grids-section {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--paper-border);
+}
+
+.layout-grid-item {
+  background: var(--paper-input, #181818);
+  border: 1px solid var(--paper-border, #2e2e2e);
+  border-radius: 6px;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.layout-grid-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.layout-grid-item-header select {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--paper-border);
+  border-radius: 4px;
+  color: var(--paper-text);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.layout-grid-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-grid-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.layout-grid-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layout-grid-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layout-grid-field > span {
+  color: var(--paper-text-secondary);
+  font-size: 10px;
+  min-width: 38px;
+}
+
+.layout-grid-field input[type="number"],
+.layout-grid-field select {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--paper-border);
+  border-radius: 4px;
+  color: var(--paper-text);
+  font-size: 11px;
+  padding: 3px 6px;
+}
+
+.layout-grid-field input[type="color"] {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--paper-border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
