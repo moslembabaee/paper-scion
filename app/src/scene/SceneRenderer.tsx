@@ -13,6 +13,7 @@ import { KineticText } from './KineticText'
 import { OpticalMetricsOverlay } from './OpticalMetricsOverlay'
 import { gradientToCSS, gradientToShaderPaint } from '../shaders/gradient'
 import type { ShaderPaint } from '../shaders/types'
+import { getEffectiveThemeMode } from '../tokens/resolver'
 import './scene.css'
 
 interface NodeProps { store: SceneStore; id: string; interactive: boolean; inheritedLocked?: boolean; presentationRoot?: boolean; presentation?: boolean }
@@ -141,12 +142,14 @@ const SceneNode = memo(function SceneNode({ store, id, interactive, inheritedLoc
   const hasEffects = node.style.effects?.some(effect => effect.enabled)
   const gradient = node.style.gradient && node.style.gradient.enabled !== false ? node.style.gradient : null
   const activeShader = node.style.shader ?? (gradient && (gradient.linkToShader || gradient.type === 'angular') ? gradientToShaderPaint(gradient) : null)
+  const effectiveThemeMode = useScene(store, state => getEffectiveThemeMode(id, state.elements, state.styleLibrary.activeThemeId))
+  const isModeOverridden = Boolean(node.themeMode || (node.component?.kind === 'instance' && node.component.overrides?.themeMode))
   const frameStyle: CSSProperties | undefined = isFrame ? {
     background: activeShader ? undefined : gradient ? gradientToCSS(gradient) : node.style.fill ?? undefined, borderRadius: node.cornerRadius,
     overflow: node.clipContent && !presentationRoot ? 'hidden' : 'visible',
     boxShadow: !hasEffects && node.style.shadow ? `${node.style.shadow.x}px ${node.style.shadow.y}px ${node.style.shadow.blur}px ${node.style.shadow.color}` : (node.style.fill === null && !gradient) ? 'none' : undefined,
   } : undefined
-  return <div className={`scene-node ${isFrame ? 'scene-frame' : ''} ${selected ? 'is-selected' : ''}`} style={style} data-element-id={id} data-element-type={node.type} data-component-kind={node.component?.kind} data-component-master={node.component?.kind === 'instance' ? node.component.masterId : undefined} data-boolean-operation={node.type === 'path' ? node.boolean?.operation : undefined} aria-label={node.name}>
+  return <div className={`scene-node ${isFrame ? 'scene-frame' : ''} ${selected ? 'is-selected' : ''} ${effectiveThemeMode ? `theme-${effectiveThemeMode}` : ''}`} style={style} data-element-id={id} data-element-type={node.type} data-theme-mode={effectiveThemeMode ?? undefined} data-paper-theme={effectiveThemeMode ?? undefined} data-mode-override={isModeOverridden ? 'true' : undefined} data-component-kind={node.component?.kind} data-component-master={node.component?.kind === 'instance' ? node.component.masterId : undefined} data-boolean-operation={node.type === 'path' ? node.boolean?.operation : undefined} aria-label={node.name}>
     {isFrame && node.parentId === null && !presentation && <div className="artboard-label">{node.name}<span>{node.width} × {node.height}</span></div>}
     {hasEffects && <svg width="0" height="0" style={{ position: 'absolute', pointerEvents: 'none' }} aria-hidden="true"><defs dangerouslySetInnerHTML={{ __html: effectMarkup }} /></svg>}
     <div className="scene-content" style={{ ...frameStyle, opacity: node.style.opacity, filter: hasEffects ? `url(#${effectId})` : undefined }}>

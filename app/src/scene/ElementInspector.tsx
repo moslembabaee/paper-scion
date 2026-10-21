@@ -1,5 +1,4 @@
 import { SharedStyleInspector, EffectStackEditor } from '../tokens/StyleLibraryPanel'
-import { resolveTokens } from '../tokens/library'
 import type { ReactNode } from 'react'
 import { TokenSelector } from '../tokens/TokenSelector'
 import type { TokenProperty } from '../tokens/types'
@@ -22,6 +21,7 @@ import { TypographyStudio } from './TypographyStudio'
 import { componentRoot } from './components'
 import { GradientInspector } from '../shaders/GradientInspector'
 import { createDefaultGradient, gradientToShaderPaint } from '../shaders/gradient'
+import { VariableModeInspector } from '../tokens/VariableModeInspector'
 
 function NumberField({ label, value, onChange, min, max, step = 1, binding, disabled = false }: { disabled?: boolean; binding?: ReactNode; label: string; value: number; onChange: (value: number) => void; min?: number; max?: number; step?: number }) {
   return <div className="token-number-field"><label className="property-number"><span>{label}</span><input key={value} aria-label={label} disabled={disabled} type="number" defaultValue={Number(value.toFixed(3))} min={min} max={max} step={step} onBlur={(event) => {
@@ -46,7 +46,7 @@ export function ElementInspector({ store, controller, grid, onGridChange, onOpen
   const managed = parent?.type === 'frame' && !!parent.layout
   const instanceChild = node?.component?.kind === 'instance' && node.component.instanceId !== node.id
   const component = node ? componentRoot(state.elements, node.id) : undefined
-  const binding = (property: TokenProperty, label: string, color = false) => node ? <TokenSelector key={`${node.id}-${property}`} store={store} node={node} property={property} label={label} tokens={resolveTokens(state.tokens, state.styleLibrary.activeThemeId)} color={color} /> : null
+  const binding = (property: TokenProperty, label: string, color = false) => node ? <TokenSelector key={`${node.id}-${property}`} store={store} node={node} property={property} label={label} tokens={store.getMultiThemeResolver().resolveForElement(node.id, state.elements)} color={color} /> : null
   const patch = (changes: ElementPatch<ElementType>) => { if (node) store.update(node.id, node.type, changes) }
   const style = (changes: Partial<SceneElement['style']>) => patch({ style: changes })
   const isInstanceLayer = node?.component?.kind === 'instance'
@@ -96,6 +96,7 @@ export function ElementInspector({ store, controller, grid, onGridChange, onOpen
     )}
     {node ? <>
       <ComponentInspector key={`component-${node.id}`} store={store} controller={controller} node={node} />
+      <VariableModeInspector key={`var-mode-${node.id}`} store={store} node={node} />
       <div className="inspector-section">
         <span className="section-caption">SELECTION</span>
         <input className="property-name" key={node.id + node.name} aria-label="Layer name" defaultValue={node.name} onBlur={event => { const name = event.currentTarget.value.trim(); if (name) patch({ name }); else event.currentTarget.value = node.name }} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur() }} />
@@ -542,7 +543,7 @@ export function ElementInspector({ store, controller, grid, onGridChange, onOpen
         {binding('shadow', 'Elevation')}
         {node.style.shadow && <><ColorField label="Shadow" value={node.style.shadow.color} onChange={color => style({ shadow: { ...node.style.shadow!, color } })} /><div className="property-pair"><NumberField label="Shadow X" value={node.style.shadow.x} onChange={x => style({ shadow: { ...node.style.shadow!, x } })} /><NumberField label="Shadow Y" value={node.style.shadow.y} onChange={y => style({ shadow: { ...node.style.shadow!, y } })} /></div><NumberField label="Blur" value={node.style.shadow.blur} min={0} onChange={blur => style({ shadow: { ...node.style.shadow!, blur } })} /></>}
       </div>
-      <div className="inspector-section"><span className="section-caption">LAYER EFFECTS</span><EffectStackEditor effects={node.style.effects ?? []} tokens={resolveTokens(state.tokens, state.styleLibrary.activeThemeId)} onChange={effects => { try { style({ effects, shadow: null }) } catch { /* Keep the last valid effect while a color is being typed. */ } }} /></div>
+      <div className="inspector-section"><span className="section-caption">LAYER EFFECTS</span><EffectStackEditor effects={node.style.effects ?? []} tokens={store.getMultiThemeResolver().resolveForElement(node.id, state.elements)} onChange={effects => { try { style({ effects, shadow: null }) } catch { /* Keep the last valid effect while a color is being typed. */ } }} /></div>
       {hasShaderOverride && (
         <div className="property-heading" style={{ marginTop: 8 }}>
           <span className="property-heading-title">

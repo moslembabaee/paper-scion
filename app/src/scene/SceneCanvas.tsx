@@ -25,9 +25,11 @@ import { Sparkles } from 'lucide-react'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { PhysicsOverlay } from '../physics/PhysicsOverlay'
 import { InteractiveCanvasOverlay } from './InteractiveCanvasOverlay'
+import { useThemeTokenInjector } from '../tokens/injector'
 
 export function SceneCanvas({ store, controller, grid, panMode, penMode = false, onExitPen, initialCamera, agentActivity, prototypeOverlay, collaboration, annotationOverlay, commentMode = false, interactiveMode = false, onExitInteractiveMode, physicsMode = false, onExitPhysicsMode }: { store: SceneStore; controller: ViewportController; grid: boolean; panMode: boolean; penMode?: boolean; onExitPen?: () => void; initialCamera?: Camera; agentActivity?: AgentActivity | null; prototypeOverlay?: ReactNode; collaboration?: CollaborationSession | null; annotationOverlay?: ReactNode; commentMode?: boolean; interactiveMode?: boolean; onExitInteractiveMode?: () => void; physicsMode?: boolean; onExitPhysicsMode?: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const themeTokensCSS = useThemeTokenInjector(store)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; worldPos: Point } | null>(null)
 
@@ -254,6 +256,7 @@ export function SceneCanvas({ store, controller, grid, panMode, penMode = false,
           onEditPath={enterPath}
         />
       )}
+      <style id="paper-canvas-theme-tokens" dangerouslySetInnerHTML={{ __html: themeTokensCSS }} />
     </div>
   )
 }

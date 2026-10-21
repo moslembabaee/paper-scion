@@ -315,3 +315,26 @@ export function getNodesBoundToToken(
   }
   return result
 }
+
+export {
+  normalizeModeId,
+  getModeDisplayName,
+  getExplicitElementMode,
+  getEffectiveThemeMode,
+  getElementModeContext,
+  getEffectiveModeTokens,
+  resolveTokenAliasChain,
+  MultiThemeTokenResolver,
+  createMultiThemeTokenResolver,
+  type VariableMode,
+  type ResolvedTokenValue,
+  type ElementModeContext,
+} from './resolver.ts'
+
+export {
+  THEME_STYLE_TAG_ID,
+  generateThemeTokensCSS,
+  injectThemeTokensCSS,
+  useThemeTokenInjector,
+} from './injector.ts'
+
