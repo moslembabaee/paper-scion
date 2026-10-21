@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
-import type { SceneStore } from './store'
-import type { SceneSnapshot } from './types'
+import type { SceneStore } from './store.ts'
+import type { SceneSnapshot } from './types.ts'
 
 /** Selectors return stable snapshots; unrelated node edits do not re-render subscribers. */
 export function useScene<T>(store: SceneStore, selector: (state: SceneSnapshot) => T): T {

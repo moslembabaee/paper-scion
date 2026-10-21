@@ -1,12 +1,13 @@
 import { EMPTY_MOTION, pruneMotion, validateMotion } from '../motion/model.ts'
 import type { MotionDocument } from '../motion/types.ts'
-import type { ComponentInstance, ComponentOverrides, ComponentProperty, ComponentPropertyValue, ComponentRegistry, ComponentStateMachine, ComponentVariant, ComponentVariantMatrix, MasterComponent, MasterComponentSchema, OverrideDiffEntry, VariantDimension, VariantMatrixCell, VariantMatrixCombination } from './types.ts'
+import type { ComponentInstance, ComponentLink, ComponentOverrides, ComponentProperty, ComponentPropertyValue, ComponentRegistry, ComponentStateMachine, ComponentVariant, ComponentVariantMatrix, MasterComponent, MasterComponentSchema, OverrideDiffEntry, VariantDimension, VariantMatrixCell, VariantMatrixCombination } from './types.ts'
 import { applyPropertyValueToElement, createVariantPresetDimensions, getEffectiveVariantDimensions, releaseComponentResources, validPropertyValue, validateComponentProperties, validatePropertyTargets, validateVariantMatrix } from './componentProperties.ts'
 import { createDefaultStateMachine, getEffectiveStateMachine, validateStateMachine } from './stateMachine.ts'
 import { EMPTY_COMMENTS, validateComments } from '../comments/model.ts'
 import type { CommentDocument } from '../comments/types.ts'
 import { EMPTY_LIBRARY, detachEditedSharedStyles, resolveSharedStyles, resolveTokens, validateLibrary } from '../tokens/library.ts'
 import { detachEditedBindings, detachRemovedTokenBindings, resolveTokenBindings, supportsTokenProperty, tokenVariable, validateTokens } from '../tokens/model.ts'
+import { createMultiThemeTokenResolver, getEffectiveThemeMode, getElementModeContext, getExplicitElementMode, getModeDisplayName, normalizeModeId, type ElementModeContext, type MultiThemeTokenResolver } from '../tokens/resolver.ts'
 import type { DesignToken, SharedStyle, SharedStyleInput, SharedStyleKind, StyleLibrary, TokenInput, TokenProperty } from '../tokens/types.ts'
 import { createElement, freezeElement, validateElement } from './elements.ts'
 import { freezeShader, validateShader } from '../shaders/catalog.ts'
@@ -364,6 +365,19 @@ export class SceneStore {
     const label = patch.style ? 'Style' : ['x', 'y', 'width', 'height', 'rotation'].some(key => Object.hasOwn(patch, key)) ? 'Transform' : 'Edit'
     let elements = { ...this.state.elements, [id]: freezeElement(recordComponentEdit(node, updated, patch)) }
 
+    // If themeMode changed on a container, re-resolve token bindings for all its descendants
+    if (Object.hasOwn(patch, 'themeMode') && patch.themeMode !== node.themeMode) {
+      const resolver = createMultiThemeTokenResolver(this.state.tokens, this.state.styleLibrary)
+      const targetSubtree = subtree(elements, id)
+      for (const item of targetSubtree) {
+        if (item.id === id) continue
+        const itemTokens = resolver.resolveForElement(item.id, elements)
+        const next = resolveTokenBindings(resolveSharedStyles(item, this.state.styleLibrary, itemTokens), itemTokens)
+        validateElement(next)
+        elements[item.id] = freezeElement(next)
+      }
+    }
+
     // Real-time nested child repositioning and resizing according to responsive pinning constraints
     if (
       node.type === 'frame' &&
@@ -495,6 +509,18 @@ export class SceneStore {
     const elements = { ...this.state.elements }
     this.ordered(elements, node.parentId, oldIds)
     this.ordered(elements, parentId, newIds)
+    const oldMode = getEffectiveThemeMode(id, this.state.elements, this.state.styleLibrary.activeThemeId)
+    const newMode = getEffectiveThemeMode(id, elements, this.state.styleLibrary.activeThemeId)
+    if (oldMode !== newMode) {
+      const resolver = createMultiThemeTokenResolver(this.state.tokens, this.state.styleLibrary)
+      const targetSubtree = subtree(elements, id)
+      for (const item of targetSubtree) {
+        const itemTokens = resolver.resolveForElement(item.id, elements)
+        const next = resolveTokenBindings(resolveSharedStyles(item, this.state.styleLibrary, itemTokens), itemTokens)
+        validateElement(next)
+        elements[item.id] = freezeElement(next)
+      }
+    }
     this.batch(() => {
       this.commit(elements, parentId === null ? newIds : node.parentId === null ? oldIds : this.state.rootIds)
       this.select(this.state.selection)
@@ -4457,8 +4483,9 @@ export class SceneStore {
     this.commit({ ...this.state.elements, [id]: freezeElement(updated) }, this.state.rootIds, this.state.selection, `Detach ${property} token`)
   }
 
-  private resolveStyles(node: SceneElement, tokens = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId), library = this.state.styleLibrary): SceneElement {
-    return resolveTokenBindings(resolveSharedStyles(node, library, tokens), tokens)
+  private resolveStyles(node: SceneElement, tokens?: readonly DesignToken[], library = this.state.styleLibrary, elements = this.state.elements): SceneElement {
+    const effectiveTokens = tokens ?? resolveTokens(this.state.tokens, getEffectiveThemeMode(node.id, elements, library.activeThemeId))
+    return resolveTokenBindings(resolveSharedStyles(node, library, effectiveTokens), effectiveTokens)
   }
 
   private setTokens(input: readonly DesignToken[], label: string): void {
@@ -4467,10 +4494,11 @@ export class SceneStore {
 
   private setDesignSystem(input: readonly DesignToken[], inputLibrary: StyleLibrary, label: string): void {
     const tokens = input === this.state.tokens ? input : validateTokens(input), styleLibrary = validateLibrary(inputLibrary, tokens)
-    const resolved = resolveTokens(tokens, styleLibrary.activeThemeId)
+    const resolver = createMultiThemeTokenResolver(tokens, styleLibrary)
     let elements = this.state.elements
     for (const node of Object.values(elements)) {
-      const next = this.resolveStyles(node, resolved, styleLibrary)
+      const nodeTokens = resolver.resolveForElement(node.id, elements)
+      const next = this.resolveStyles(node, nodeTokens, styleLibrary, elements)
       if (next === node) continue
       validateElement(next)
       if (elements === this.state.elements) elements = { ...elements }
@@ -4531,6 +4559,76 @@ export class SceneStore {
     const themeAliases: Record<string, string> = { ...token.themeAliases }
     if (aliasTargetId === undefined || aliasTargetId === '') delete themeAliases[themeId]; else themeAliases[themeId] = aliasTargetId
     this.updateToken(id, { themeAliases })
+  }
+
+  setElementThemeMode(id: string, mode: string | null): void {
+    const node = this.require(id)
+    if (this.isLocked(id)) throw new Error('Element is locked')
+    if (mode !== null && mode !== undefined && (typeof mode !== 'string' || !mode.trim() || mode.length > 200)) {
+      throw new Error('Invalid theme mode')
+    }
+    const normalized = normalizeModeId(mode)
+    const currentExplicit = getExplicitElementMode(node)
+    if (normalized === currentExplicit) return
+
+    let elements = { ...this.state.elements }
+    const isInstance = node.component?.kind === 'instance'
+
+    let updatedNode: SceneElement
+    if (isInstance) {
+      const link = node.component as Extract<ComponentLink, { kind: 'instance' }>
+      const { themeMode: _prevOverride, ...restOverrides } = link.overrides
+      void _prevOverride
+      const overrides: ComponentOverrides = {
+        ...restOverrides,
+        ...(normalized !== null ? { themeMode: normalized } : {}),
+      }
+      const { themeMode: _prevNodeMode, ...restNode } = node
+      void _prevNodeMode
+      updatedNode = {
+        ...restNode,
+        ...(normalized !== null ? { themeMode: normalized } : {}),
+        component: { ...link, overrides },
+      } as SceneElement
+    } else {
+      const { themeMode: _prevNodeMode, ...restNode } = node
+      void _prevNodeMode
+      updatedNode = {
+        ...restNode,
+        ...(normalized !== null ? { themeMode: normalized } : {}),
+      } as SceneElement
+    }
+    elements[id] = freezeElement(updatedNode)
+
+    const resolver = createMultiThemeTokenResolver(this.state.tokens, this.state.styleLibrary)
+    const targetSubtree = subtree(elements, id)
+    for (const item of targetSubtree) {
+      const itemTokens = resolver.resolveForElement(item.id, elements)
+      const next = resolveTokenBindings(resolveSharedStyles(item, this.state.styleLibrary, itemTokens), itemTokens)
+      validateElement(next)
+      elements[item.id] = freezeElement(next)
+    }
+
+    elements = synchronizeComponents(elements, resolver.resolveForMode(this.state.styleLibrary.activeThemeId), this.state.elements, this.state.styleLibrary) as Record<string, SceneElement>
+
+    this.commit(
+      elements,
+      this.state.rootIds,
+      this.state.selection,
+      `Set ${node.name} mode to ${getModeDisplayName(normalized, this.state.styleLibrary.themes)}`
+    )
+  }
+
+  getElementEffectiveThemeMode(id: string): string | null {
+    return getEffectiveThemeMode(id, this.state.elements, this.state.styleLibrary.activeThemeId)
+  }
+
+  getElementThemeModeContext(id: string): ElementModeContext {
+    return getElementModeContext(id, this.state.elements, this.state.styleLibrary.activeThemeId)
+  }
+
+  getMultiThemeResolver(): MultiThemeTokenResolver {
+    return createMultiThemeTokenResolver(this.state.tokens, this.state.styleLibrary)
   }
 
   addSharedStyle(input: SharedStyleInput): SharedStyle {
@@ -4760,12 +4858,14 @@ export class SceneStore {
     }
     const tokens = validateTokens(document.tokens ?? [])
     const styleLibrary = validateLibrary(document.styleLibrary, tokens)
-    const resolvedTokens = resolveTokens(tokens, styleLibrary.activeThemeId)
+    const resolver = createMultiThemeTokenResolver(tokens, styleLibrary)
+    const resolvedTokens = resolver.resolveForMode(styleLibrary.activeThemeId)
     const elements: Record<string, SceneElement> = {}
     for (const [id, node] of Object.entries(document.elements)) {
       if (id !== node.id || ['__proto__', 'prototype', 'constructor'].includes(id)) throw new Error('Invalid element ID')
       validateElement(node)
-      const resolved = this.resolveStyles(node, resolvedTokens, styleLibrary)
+      const nodeTokens = resolver.resolveForElement(node.id, document.elements)
+      const resolved = this.resolveStyles(node, nodeTokens, styleLibrary, document.elements)
       validateElement(resolved)
       elements[id] = freezeElement(resolved)
     }

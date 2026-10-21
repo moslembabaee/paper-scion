@@ -1,6 +1,7 @@
 import { pruneComponentProperties, pruneVariantMatrix, resolveComponentProperties, validPropertyValue, validateComponentProperties, validatePropertyTargets, validateVariantMatrix } from './componentProperties.ts'
 import { validateStateMachine } from './stateMachine.ts'
-import { EMPTY_LIBRARY, detachEditedSharedStyles, resolveSharedStyles } from '../tokens/library.ts'
+import { EMPTY_LIBRARY, detachEditedSharedStyles, resolveSharedStyles, resolveTokens } from '../tokens/library.ts'
+import { getEffectiveThemeMode } from '../tokens/resolver.ts'
 import type { ComponentInstance, ComponentLink, ComponentOverrides, ComponentRegistry, ComponentRegistryEntry, ComponentSlotInfo, ElementPatch, ElementType, MasterComponent, OverrideDiffEntry, PropertyOverrideBinding, SceneElement } from './types.ts'
 import { freezeElement, validateElement } from './elements.ts'
 import { equalValue } from './history.ts'
@@ -53,6 +54,7 @@ export function validateComponent(link: ComponentLink): void {
   }
   if (link.overrides.sharedStyleBindings !== undefined && (!record(link.overrides.sharedStyleBindings) || Object.entries(link.overrides.sharedStyleBindings).some(([key, value]) => !['color', 'typography', 'effects'].includes(key) || (value !== null && (typeof value !== 'string' || !value))))) throw new Error('Invalid shared style override')
   if (link.overrides.tokenBindings !== undefined && (!record(link.overrides.tokenBindings) || Object.entries(link.overrides.tokenBindings).some(([key, value]) => !TOKEN_KEYS.has(key) || (value !== null && (typeof value !== 'string' || !value))))) throw new Error('Invalid component token bindings')
+  if (link.overrides.themeMode !== undefined && link.overrides.themeMode !== null && (typeof link.overrides.themeMode !== 'string' || !link.overrides.themeMode.trim() || link.overrides.themeMode.length > 200)) throw new Error('Invalid component theme mode override')
 }
 
 export function isMasterComponent(node: SceneElement | null | undefined): node is MasterComponent {
@@ -247,7 +249,15 @@ export function recordComponentEdit(node: SceneElement, updated: SceneElement, p
   for (const property of Object.keys(tokenBindings) as TokenProperty[]) if (node.tokenBindings?.[property] && !updated.tokenBindings?.[property]) tokenBindings[property] = null
   const sharedStyleBindings = { ...link.overrides.sharedStyleBindings }
   for (const kind of ['color', 'typography', 'effects'] as const) if (node.sharedStyleBindings?.[kind] && !updated.sharedStyleBindings?.[kind]) sharedStyleBindings[kind] = null
-  const overrides: ComponentOverrides = { ...link.overrides, properties, style, ...(Object.keys(sharedStyleBindings).length ? { sharedStyleBindings } : {}), ...(Object.keys(tokenBindings).length ? { tokenBindings } : {}) }
+  const themeModeOverride = Object.hasOwn(patch, 'themeMode') ? patch.themeMode : link.overrides.themeMode
+  const overrides: ComponentOverrides = {
+    ...link.overrides,
+    properties,
+    style,
+    ...(Object.keys(sharedStyleBindings).length ? { sharedStyleBindings } : {}),
+    ...(Object.keys(tokenBindings).length ? { tokenBindings } : {}),
+    ...(themeModeOverride !== undefined ? { themeMode: themeModeOverride } : {}),
+  }
   return { ...updated, component: { ...link, overrides } }
 }
 
@@ -330,10 +340,15 @@ export function applyComponentOverrides(source: SceneElement, link: Extract<Comp
     textOnPath = propRecord.textOnPath ? { ...source.textOnPath, ...(propRecord.textOnPath as any) } : undefined
   }
 
+  const explicitThemeMode = link.overrides.themeMode !== undefined
+    ? link.overrides.themeMode
+    : (properties.themeMode !== undefined ? (properties.themeMode as string | null) : source.themeMode)
+
   const node = {
     ...source,
     ...(source.sharedStyleBindings || Object.keys(sharedStyleBindings).length ? { sharedStyleBindings } : {}),
     ...properties,
+    ...(explicitThemeMode !== undefined && explicitThemeMode !== null ? { themeMode: explicitThemeMode } : {}),
     ...(source.type === 'text' && (Object.hasOwn(propRecord, 'kinetic') || source.kinetic) ? { kinetic } : {}) as any,
     ...(source.type === 'text' && (Object.hasOwn(propRecord, 'variableAxes') || source.variableAxes) ? { variableAxes } : {}) as any,
     ...(source.type === 'text' && (Object.hasOwn(propRecord, 'openTypeFeatures') || source.openTypeFeatures) ? { openTypeFeatures } : {}) as any,
@@ -342,6 +357,7 @@ export function applyComponentOverrides(source: SceneElement, link: Extract<Comp
     tokenBindings,
     style: { ...source.style, ...style, stroke, ...(Object.hasOwn(style, 'shader') || source.style.shader ? { shader } : {}) }
   } as SceneElement
+  if (explicitThemeMode === null) delete (node as { themeMode?: unknown }).themeMode
   if (!source.tokenBindings && !Object.keys(tokenBindings).length) delete (node as { tokenBindings?: unknown }).tokenBindings
   if (node.type === 'path' && Object.hasOwn(properties, 'd') && !Object.hasOwn(properties, 'nodes')) delete (node as { nodes?: unknown }).nodes
   return resolveTokenBindings(resolveSharedStyles(node, library, tokens), tokens)
@@ -434,6 +450,9 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
       }
     }
 
+    const effectiveInstanceMode = link.overrides.themeMode ?? root.themeMode ?? getEffectiveThemeMode(root.id, input, library.activeThemeId)
+    const instanceTokens = resolveTokens(tokens, effectiveInstanceMode)
+
     for (const source of sources) {
       const old = oldBySource.get(source.id)
       const id = ids.get(source.id)!
@@ -446,7 +465,7 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
           ...(link.activeState !== undefined ? { activeState: link.activeState } : {}),
         }
       }
-      const configured = resolveComponentProperties(source, definitions, propertyValues, tokens, library, link.activeState, master.component.variantMatrix)
+      const configured = resolveComponentProperties(source, definitions, propertyValues, instanceTokens, library, link.activeState, master.component.variantMatrix)
       let childIds = source.type === 'frame' ? source.children.map(child => ids.get(child)!).filter(Boolean) : []
       if (source.type === 'frame') {
         const customSlotChildren = slotChildrenBySource.get(source.id) ?? []
@@ -457,7 +476,7 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
           put(updatedSlotChild)
         }
       }
-      let node = applyComponentOverrides(configured, component, tokens, library)
+      let node = applyComponentOverrides(configured, component, instanceTokens, library)
       node = { ...node, id, parentId: source.id === master.id ? root.parentId : ids.get(source.parentId!)!, zIndex: source.id === master.id ? root.zIndex : source.zIndex,
         ...(source.id === master.id ? { x: root.x, y: root.y, rotation: root.rotation } : {}),
         ...(source.type === 'frame' ? { children: childIds } : {}),
