@@ -17,9 +17,15 @@ import type { SceneStore } from '../scene/store'
 import { useScene } from '../scene/useScene'
 import {
   computeScreenDiff,
+  elementToCubicContours,
+  interpolateSmartPath,
+  isSpringSettled,
+  springMicroInteractionStep,
   springPhysicsMetrics,
   type ScreenDiff,
 } from './smartAnimate'
+import { prepareMorph } from '../morph/interpolate'
+import { DEFAULT_MORPH_CONFIG } from '../morph/presets'
 import { DEFAULT_SPRING, SPRING_LIMITS, SPRING_PRESETS, springDuration, springProgress } from './spring'
 import type { PrototypeTransition, SpringParameters } from './types'
 
@@ -136,6 +142,17 @@ export function SmartAnimateOverlay({
   const puckCurrent = useRef({ x: 0, y: 0 })
   const puckAnimFrame = useRef<number>(0)
 
+  const morphPreviewPair = useMemo(() => {
+    const existing = screenDiff.matched.find(p => p.geometryDiff.isMorphable && p.geometryDiff.preparedMorph)
+    if (existing) return existing.geometryDiff.preparedMorph
+    try {
+      const rawA = elementToCubicContours({ type: 'ellipse', id: 'm-a', name: 'Circle', x: 0, y: 0, width: 44, height: 44, rotation: 0, parentId: null, visible: true, style: { opacity: 1, fill: '#81adec' } } as any)
+      const rawB = elementToCubicContours({ type: 'rectangle', id: 'm-b', name: 'Square', x: 0, y: 0, width: 44, height: 44, cornerRadius: 6, rotation: 0, parentId: null, visible: true, style: { opacity: 1, fill: '#81adec' } } as any)
+      if (rawA && rawB) return prepareMorph(rawA, rawB, DEFAULT_MORPH_CONFIG)
+    } catch {}
+    return null
+  }, [screenDiff.matched])
+
   const onPuckDown = (e: React.PointerEvent) => {
     puckDragging.current = true
     puckDragStart.current = { x: e.clientX - puckCurrent.current.x, y: e.clientY - puckCurrent.current.y }
@@ -164,30 +181,23 @@ export function SmartAnimateOverlay({
     let posY = puckCurrent.current.y
     let vx = 0
     let vy = 0
-    const m = spring.mass
-    const k = spring.stiffness
-    const c = spring.damping
 
     const runPhysics = (now: number) => {
       const dt = Math.min(0.032, (now - lastTime) / 1000)
       lastTime = now
 
-      // F = -k*x - c*v
-      const fx = -k * posX - c * vx
-      const fy = -k * posY - c * vy
+      const nextX = springMicroInteractionStep({ position: posX, velocity: vx }, 0, spring, dt)
+      const nextY = springMicroInteractionStep({ position: posY, velocity: vy }, 0, spring, dt)
 
-      const ax = fx / m
-      const ay = fy / m
-
-      vx += ax * dt
-      vy += ay * dt
-      posX += vx * dt
-      posY += vy * dt
+      posX = nextX.position
+      vx = nextX.velocity
+      posY = nextY.position
+      vy = nextY.velocity
 
       puckCurrent.current = { x: posX, y: posY }
       setPuckPos({ x: posX, y: posY })
 
-      if (Math.hypot(posX, posY) > 0.3 || Math.hypot(vx, vy) > 0.5) {
+      if (!isSpringSettled(nextX, 0, 0.3, 0.5) || !isSpringSettled(nextY, 0, 0.3, 0.5)) {
         puckAnimFrame.current = requestAnimationFrame(runPhysics)
       } else {
         puckCurrent.current = { x: 0, y: 0 }
@@ -542,6 +552,23 @@ export function SmartAnimateOverlay({
                   <span className="puck-core" />
                 </div>
               </div>
+              {(() => {
+                const puckDist = Math.hypot(puckPos.x, puckPos.y)
+                const pullT = Math.min(1, puckDist / 50)
+                const currentMorphD = morphPreviewPair ? interpolateSmartPath(morphPreviewPair, pullT) : null
+                if (!currentMorphD) return null
+                return (
+                  <div className="touchpad-morph-preview" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, padding: '8px 10px', background: '#222222', borderRadius: 6, border: '1px solid #2e2e2e' }}>
+                    <svg width="36" height="36" viewBox="0 0 44 44" style={{ flexShrink: 0 }}>
+                      <path d={currentMorphD} fill="#81adec22" stroke="#81adec" strokeWidth="1.5" />
+                    </svg>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontSize: 10, fontWeight: 500, color: '#edebe1' }}>Spring-Morph Restitution</span>
+                      <span style={{ fontSize: 9, color: '#888' }}>Tension: {Math.round(pullT * 100)}% · Physical harmonic restore</span>
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>

@@ -5,14 +5,15 @@ import { Dialog } from '../workspace/Dialog'
 import { SceneRenderer } from '../scene/SceneRenderer'
 import type { SceneStore } from '../scene/store'
 import { useScene } from '../scene/useScene'
-import { easingCSS, easingCurve, easeProgress, EMPTY_PROTOTYPE, isDescendant, isVisible, matchedLayers, presentationExtent, smartKeyframes, transitionDuration, transitionFrames, transitionProgress } from './model'
+import { DEFAULT_TRANSITION, easingCSS, easingCurve, easeProgress, EMPTY_PROTOTYPE, isDescendant, isVisible, matchedLayers, presentationExtent, smartKeyframes, transitionDuration, transitionFrames, transitionProgress } from './model'
 import type { PrototypeInteraction, PrototypeTransition } from './types'
 import { componentRoot } from '../scene/components'
 import { getEffectiveStateMachine, resolveNextState } from '../scene/stateMachine'
 import { DEFAULT_SPRING, springCSS as componentSpringCSS, springDuration as componentSpringDuration, springProgress } from './spring'
 import type { ComponentStateTrigger } from '../scene/types'
-import { computeScreenDiff, interpolateSmartPath } from './smartAnimate'
+import { computeScreenDiff, evaluateSmartMatrix, interpolateColor, interpolateSmartPath, smartTransitionProgress } from './smartAnimate'
 import { SmartAnimateOverlay } from './SmartAnimateOverlay'
+import { SmartGhostOverlay } from './SmartGhostOverlay'
 
 interface Playback { frameId: string; overlayId: string | null }
 interface Motion { fromId: string | null; toId: string; overlay: boolean; transition: PrototypeTransition; scrollTop: number; scrollLeft: number }
@@ -46,6 +47,43 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
   const scale = Math.min(1, Math.max(.05, (available.width - 64) / (size.width + bezel)), Math.max(.05, (available.height - 64) / (size.height + bezel)))
   const interactions = useMemo(() => prototype.interactions.filter(item => isDescendant(state.elements, item.sourceId, activeFrameId) && isVisible(state.elements, item.sourceId) && isVisible(state.elements, item.targetId)), [prototype.interactions, state.elements, activeFrameId])
   const delayScope = useRef<{ frameId: string; epoch: number; interactions: typeof interactions; remaining: Map<string, number> } | null>(null)
+
+  const defaultSmartPair = useMemo(() => {
+    const smartInteraction = prototype.interactions.find(item =>
+      (item.sourceId === playback.frameId || isDescendant(state.elements, item.sourceId, playback.frameId)) &&
+      item.transition.kind === 'smart' &&
+      isVisible(state.elements, item.targetId)
+    )
+    if (smartInteraction) {
+      return {
+        fromId: playback.frameId,
+        toId: smartInteraction.targetId,
+        transition: smartInteraction.transition,
+      }
+    }
+    const anyInteraction = prototype.interactions.find(item =>
+      (item.sourceId === playback.frameId || isDescendant(state.elements, item.sourceId, playback.frameId)) &&
+      isVisible(state.elements, item.targetId)
+    )
+    if (anyInteraction) {
+      return {
+        fromId: playback.frameId,
+        toId: anyInteraction.targetId,
+        transition: anyInteraction.transition.kind === 'smart' ? anyInteraction.transition : { ...anyInteraction.transition, kind: 'smart' as const },
+      }
+    }
+    if (frames.length >= 2) {
+      const other = frames.find(f => f.id !== playback.frameId) ?? frames[1]
+      return {
+        fromId: playback.frameId,
+        toId: other.id,
+        transition: { ...DEFAULT_TRANSITION, kind: 'smart' as const },
+      }
+    }
+    return null
+  }, [prototype.interactions, playback.frameId, state.elements, frames])
+
+  const effectiveScreenPair = lastScreenPair ?? defaultSmartPair
 
   useLayoutEffect(() => {
     const observer = new ResizeObserver(([entry]) => setAvailable({ width: entry.contentRect.width, height: entry.contentRect.height }))
@@ -125,13 +163,32 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
       const fromFrame = state.elements[motion.fromId], toFrame = state.elements[motion.toId]
       const incomingFit = incoming.clientWidth / toFrame.width, outgoingFit = outgoing.clientWidth / fromFrame.width
 
-      const morphTargets: { pair: (typeof screenDiff.matched)[number]; pathDom: SVGPathElement; originalD: string }[] = []
+      const morphTargets: { pair: (typeof screenDiff.matched)[number]; pathDom: SVGPathElement; originalD: string; tempPath?: boolean; originalShape?: SVGElement }[] = []
       for (const pair of screenDiff.matched) {
         if (pair.geometryDiff.isMorphable && pair.geometryDiff.preparedMorph) {
           const element = newIndex.get(pair.to.id)
-          const pathDom = element?.querySelector<SVGPathElement>('.scene-vector > path')
+          const svg = element?.querySelector<SVGSVGElement>('.scene-vector')
+          let pathDom = svg?.querySelector<SVGPathElement>('path')
+          let tempPath = false
+          let originalShape: SVGElement | undefined
+          if (!pathDom && svg && pair.geometryDiff.toD) {
+            const shape = svg.querySelector<SVGElement>('rect, ellipse')
+            if (shape) {
+              shape.style.display = 'none'
+              pathDom = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+              pathDom.setAttribute('d', pair.geometryDiff.toD)
+              pathDom.setAttribute('fill', pair.to.style.fill ?? 'currentColor')
+              if (pair.to.style.stroke) {
+                pathDom.setAttribute('stroke', pair.to.style.stroke.color)
+                pathDom.setAttribute('stroke-width', String(pair.to.style.stroke.width))
+              }
+              svg.appendChild(pathDom)
+              tempPath = true
+              originalShape = shape
+            }
+          }
           if (pathDom && pair.geometryDiff.toD) {
-            morphTargets.push({ pair, pathDom, originalD: pair.geometryDiff.toD })
+            morphTargets.push({ pair, pathDom, originalD: pair.geometryDiff.toD, tempPath, originalShape })
           }
         }
       }
@@ -184,7 +241,12 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
         if (active) {
           cancelAnimationFrame(morphRafId)
           for (const item of morphTargets) {
-            item.pathDom.setAttribute('d', item.originalD)
+            if (item.tempPath) {
+              item.pathDom.remove()
+              if (item.originalShape) item.originalShape.style.display = ''
+            } else {
+              item.pathDom.setAttribute('d', item.originalD)
+            }
           }
           busy.current = false
           setMotion(null)
@@ -195,7 +257,12 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
         active = false
         cancelAnimationFrame(morphRafId)
         for (const item of morphTargets) {
-          item.pathDom.setAttribute('d', item.originalD)
+          if (item.tempPath) {
+            item.pathDom.remove()
+            if (item.originalShape) item.originalShape.style.display = ''
+          } else {
+            item.pathDom.setAttribute('d', item.originalD)
+          }
         }
         for (const animation of animations) animation.cancel()
       }
@@ -207,6 +274,100 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
     void Promise.all(animations.map(animation => animation.finished.catch(() => {}))).then(finish)
     return () => { active = false; for (const animation of animations) animation.cancel() }
   }, [motion, state.elements])
+
+  useLayoutEffect(() => {
+    if (scrubProgress === null || !effectiveScreenPair || motion) return
+    const container = currentRef.current
+    if (!container) return
+
+    const screenDiff = computeScreenDiff(state.elements, effectiveScreenPair.fromId, effectiveScreenPair.toId)
+    const transition = effectiveScreenPair.transition
+    const duration = transitionDuration(transition)
+    const easedT = smartTransitionProgress(scrubProgress, transition, duration)
+    const clampedProgress = Math.max(0, Math.min(1, easedT))
+
+    const nodes = [...container.querySelectorAll<HTMLElement>('[data-element-id]')]
+    const nodeIndex = new Map(nodes.map(n => [n.dataset.elementId!, n]))
+
+    const cleanedStyles: { element: HTMLElement; originalTransform: string; originalOpacity: string }[] = []
+    const cleanedMorphs: { pathDom: SVGPathElement; originalD: string; tempPath?: boolean; originalShape?: SVGElement }[] = []
+
+    for (const pair of screenDiff.matched) {
+      const element = nodeIndex.get(pair.to.id) ?? nodeIndex.get(pair.from.id)
+      if (!element) continue
+
+      cleanedStyles.push({
+        element,
+        originalTransform: element.style.transform,
+        originalOpacity: element.style.opacity,
+      })
+
+      const matrix = evaluateSmartMatrix(pair.from, pair.to, easedT)
+      element.style.transform = matrix
+      element.style.transformOrigin = '0 0'
+
+      const opacity = pair.from.style.opacity + (pair.to.style.opacity - pair.from.style.opacity) * clampedProgress
+      element.style.opacity = String(opacity)
+
+      const paint = element.querySelector<HTMLElement>(':scope > .scene-content')
+      if (paint && (pair.from.style.fill || pair.to.style.fill)) {
+        paint.style.backgroundColor = interpolateColor(pair.from.style.fill, pair.to.style.fill, clampedProgress)
+        if ('cornerRadius' in pair.from && 'cornerRadius' in pair.to) {
+          const rFrom = (pair.from as { cornerRadius?: number }).cornerRadius ?? 0
+          const rTo = (pair.to as { cornerRadius?: number }).cornerRadius ?? 0
+          paint.style.borderRadius = `${rFrom + (rTo - rFrom) * clampedProgress}px`
+        }
+      }
+
+      if (pair.geometryDiff.isMorphable && pair.geometryDiff.preparedMorph) {
+        const svg = element.querySelector<SVGSVGElement>('.scene-vector')
+        let pathDom = svg?.querySelector<SVGPathElement>('path')
+        let tempPath = false
+        let originalShape: SVGElement | undefined
+        if (!pathDom && svg && pair.geometryDiff.toD) {
+          const shape = svg.querySelector<SVGElement>('rect, ellipse')
+          if (shape) {
+            shape.style.display = 'none'
+            pathDom = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+            pathDom.setAttribute('d', pair.geometryDiff.toD)
+            pathDom.setAttribute('fill', pair.to.style.fill ?? 'currentColor')
+            svg.appendChild(pathDom)
+            tempPath = true
+            originalShape = shape
+          }
+        }
+        if (pathDom) {
+          const originalD = pathDom.getAttribute('d') ?? pair.geometryDiff.toD ?? ''
+          cleanedMorphs.push({ pathDom, originalD, tempPath, originalShape })
+          const morphedD = interpolateSmartPath(pair.geometryDiff.preparedMorph, clampedProgress)
+          if (morphedD) {
+            pathDom.setAttribute('d', morphedD)
+          }
+        }
+      }
+    }
+
+    return () => {
+      for (const item of cleanedStyles) {
+        item.element.style.transform = item.originalTransform
+        item.element.style.transformOrigin = ''
+        item.element.style.opacity = item.originalOpacity
+        const paint = item.element.querySelector<HTMLElement>(':scope > .scene-content')
+        if (paint) {
+          paint.style.backgroundColor = ''
+          paint.style.borderRadius = ''
+        }
+      }
+      for (const item of cleanedMorphs) {
+        if (item.tempPath) {
+          item.pathDom.remove()
+          if (item.originalShape) item.originalShape.style.display = ''
+        } else {
+          item.pathDom.setAttribute('d', item.originalD)
+        }
+      }
+    }
+  }, [scrubProgress, effectiveScreenPair, state.elements, motion])
 
   useEffect(() => {
     if (!delayScope.current || delayScope.current.frameId !== activeFrameId || delayScope.current.interactions !== interactions || delayScope.current.epoch !== delayEpoch) {
@@ -328,16 +489,35 @@ export function PresentationPlayer({ store, onClose }: { store: SceneStore; onCl
             {motion?.overlay && motion.fromId && <PlayerLayer ref={previousOverlayRef} store={store} frameId={motion.fromId} {...overlaySize(motion.fromId)} overlay inert />}
             <PlayerLayer key={playback.overlayId} ref={overlayRef} store={store} frameId={playback.overlayId} {...overlaySize(playback.overlayId)} overlay />
           </div>}
+          {showGhosts && effectiveScreenPair && (
+            <SmartGhostOverlay
+              screenDiff={computeScreenDiff(state.elements, effectiveScreenPair.fromId, effectiveScreenPair.toId)}
+              width={size.width}
+              height={size.height}
+            />
+          )}
         </div>
       </div> : <div className="prototype-player-empty"><Monitor size={32} /><p>Add a frame to present your design.</p></div>}
     </div>
-    <footer className="prototype-player-footer"><div className="prototype-playback-controls"><button className="quiet-button" aria-label="Go back" disabled={!history.length && !playback.overlayId} onClick={back}><ArrowLeft size={16} /></button><button className="quiet-button" aria-label="Restart prototype" onClick={restart}><RotateCcw size={15} /></button><button className="prototype-play-toggle" aria-label={playing ? 'Pause prototype' : 'Resume prototype'} onClick={() => { cancelMotion(); setPlaying(value => !value) }}>{playing ? <Pause size={14} /> : <Play size={14} />}</button><span>{playing ? 'Playing' : 'Paused'}</span></div><span className="prototype-player-screen" role="status">{playback.overlayId ? `Overlay · ${state.elements[playback.overlayId]?.name}` : `${frames.findIndex(node => node.id === playback.frameId) + 1} / ${frames.length}`}</span><div className="prototype-player-options">{lastScreenPair && <button className={`quiet-button ${smartHudOpen ? 'active' : ''}`} aria-label="Smart Animate Inspector" title="Smart Animate Morph & Physics Inspector" onClick={() => setSmartHudOpen(!smartHudOpen)}><Sparkles size={15} /></button>}<button className={`quiet-button ${hotspots ? 'active' : ''}`} aria-label="Show interaction hotspots" aria-pressed={hotspots} onClick={() => setHotspots(!hotspots)}><Eye size={16} /></button>{prototype.device === 'phone' ? <Smartphone size={13} /> : <Monitor size={13} />}<span>{Math.round(scale * 100)}%</span></div></footer>
-    {smartHudOpen && lastScreenPair && (
+    <footer className="prototype-player-footer"><div className="prototype-playback-controls"><button className="quiet-button" aria-label="Go back" disabled={!history.length && !playback.overlayId} onClick={back}><ArrowLeft size={16} /></button><button className="quiet-button" aria-label="Restart prototype" onClick={restart}><RotateCcw size={15} /></button><button className="prototype-play-toggle" aria-label={playing ? 'Pause prototype' : 'Resume prototype'} onClick={() => { cancelMotion(); setPlaying(value => !value) }}>{playing ? <Pause size={14} /> : <Play size={14} />}</button><span>{playing ? 'Playing' : 'Paused'}</span></div><span className="prototype-player-screen" role="status">{playback.overlayId ? `Overlay · ${state.elements[playback.overlayId]?.name}` : `${frames.findIndex(node => node.id === playback.frameId) + 1} / ${frames.length}`}</span><div className="prototype-player-options">{effectiveScreenPair && <button className={`quiet-button ${smartHudOpen ? 'active' : ''}`} aria-label="Smart Animate Inspector" title="Smart Animate Morph & Physics Inspector" onClick={() => setSmartHudOpen(!smartHudOpen)}><Sparkles size={15} /></button>}<button className={`quiet-button ${hotspots ? 'active' : ''}`} aria-label="Show interaction hotspots" aria-pressed={hotspots} onClick={() => setHotspots(!hotspots)}><Eye size={16} /></button>{prototype.device === 'phone' ? <Smartphone size={13} /> : <Monitor size={13} />}<span>{Math.round(scale * 100)}%</span></div></footer>
+    {smartHudOpen && effectiveScreenPair && (
       <SmartAnimateOverlay
         store={store}
-        fromFrameId={lastScreenPair.fromId}
-        toFrameId={lastScreenPair.toId}
-        transition={lastScreenPair.transition}
+        fromFrameId={effectiveScreenPair.fromId}
+        toFrameId={effectiveScreenPair.toId}
+        transition={effectiveScreenPair.transition}
+        onUpdateTransition={patch => {
+          const interaction = prototype.interactions.find(i =>
+            (i.sourceId === effectiveScreenPair.fromId || isDescendant(state.elements, i.sourceId, effectiveScreenPair.fromId)) &&
+            i.targetId === effectiveScreenPair.toId
+          )
+          if (interaction) {
+            store.updateInteraction(interaction.id, { transition: { ...interaction.transition, ...patch } })
+          }
+          if (lastScreenPair) {
+            setLastScreenPair({ ...lastScreenPair, transition: { ...lastScreenPair.transition, ...patch } })
+          }
+        }}
         scrubProgress={scrubProgress}
         onScrub={setScrubProgress}
         showGhosts={showGhosts}
