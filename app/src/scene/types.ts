@@ -541,6 +541,21 @@ export interface ComponentSlotInfo {
   readonly isPreserved: boolean
 }
 
+export interface InstanceNestedOverrideEntry {
+  readonly layerId: string
+  readonly sourceId: string
+  readonly layerName: string
+  readonly overrides: ComponentOverrides
+  readonly channels: readonly string[]
+}
+
+export interface InstanceSyncStatus {
+  readonly isSynced: boolean
+  readonly overrideCount: number
+  readonly overriddenLayers: number
+  readonly modifiedChannels: readonly string[]
+}
+
 export interface MasterComponentMetadata {
   readonly description?: string
   readonly createdAt?: number

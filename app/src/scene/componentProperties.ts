@@ -350,6 +350,48 @@ export function applyPropertyValueToElement(
   return updated
 }
 
+/** Find all matching variant combinations for the given active dimension values, ordered by specificity */
+export function resolveVariantCombinations(
+  variantMatrix: ComponentVariantMatrix,
+  activeDimensionValues: Readonly<Record<string, string>>
+): readonly VariantMatrixCombination[] {
+  if (!variantMatrix.combinations.length) return []
+  const matching: { comb: VariantMatrixCombination; score: number }[] = []
+
+  for (const comb of variantMatrix.combinations) {
+    const combDims = Object.entries(comb.dimensions)
+    if (combDims.length === 0) continue
+    let matches = 0
+    let failed = false
+    for (const [dimKey, dimVal] of combDims) {
+      const currentVal = activeDimensionValues[dimKey] ??
+        activeDimensionValues[dimKey.toLowerCase()] ??
+        activeDimensionValues[dimKey.toUpperCase()]
+      if (currentVal === dimVal || (typeof currentVal === 'string' && currentVal.toLowerCase() === dimVal.toLowerCase())) {
+        matches++
+      } else {
+        failed = true
+        break
+      }
+    }
+    if (!failed && matches > 0) {
+      matching.push({ comb, score: matches })
+    }
+  }
+
+  matching.sort((a, b) => a.score - b.score)
+  return Object.freeze(matching.map(m => m.comb))
+}
+
+/** Find the single most specific matching variant combination */
+export function findMatchingVariantCombination(
+  variantMatrix: ComponentVariantMatrix,
+  activeDimensionValues: Readonly<Record<string, string>>
+): VariantMatrixCombination | undefined {
+  const matches = resolveVariantCombinations(variantMatrix, activeDimensionValues)
+  return matches.length > 0 ? matches[matches.length - 1] : undefined
+}
+
 /** Variants compose first; slots then win over variants, and local layer edits win last. */
 export function resolveComponentProperties(
   source: SceneElement,
@@ -396,29 +438,8 @@ export function resolveComponentProperties(
       activeDimensionValues[dim.name.toLowerCase()] = resolvedVal
     }
 
-    const matchingCombinations: { comb: VariantMatrixCombination; score: number }[] = []
-
-    for (const comb of variantMatrix.combinations) {
-      const combDims = Object.entries(comb.dimensions)
-      if (combDims.length === 0) continue
-      let matches = 0
-      let failed = false
-      for (const [dimKey, dimVal] of combDims) {
-        const currentVal = activeDimensionValues[dimKey] ?? activeDimensionValues[dimKey.toLowerCase()]
-        if (currentVal === dimVal) {
-          matches++
-        } else {
-          failed = true
-          break
-        }
-      }
-      if (!failed && matches > 0) {
-        matchingCombinations.push({ comb, score: matches })
-      }
-    }
-
-    matchingCombinations.sort((a, b) => a.score - b.score)
-    for (const { comb } of matchingCombinations) {
+    const matchingCombinations = resolveVariantCombinations(variantMatrix, activeDimensionValues)
+    for (const comb of matchingCombinations) {
       if (comb.layers[source.id]) {
         apply(comb.layers[source.id])
       }

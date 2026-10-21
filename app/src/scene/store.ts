@@ -1,7 +1,7 @@
 import { EMPTY_MOTION, pruneMotion, validateMotion } from '../motion/model.ts'
 import type { MotionDocument } from '../motion/types.ts'
-import type { ComponentInstance, ComponentLink, ComponentOverrides, ComponentProperty, ComponentPropertyValue, ComponentRegistry, ComponentStateMachine, ComponentVariant, ComponentVariantMatrix, MasterComponent, MasterComponentSchema, OverrideDiffEntry, VariantDimension, VariantMatrixCell, VariantMatrixCombination } from './types.ts'
-import { applyPropertyValueToElement, createVariantPresetDimensions, getEffectiveVariantDimensions, releaseComponentResources, validPropertyValue, validateComponentProperties, validatePropertyTargets, validateVariantMatrix } from './componentProperties.ts'
+import type { ComponentInstance, ComponentLink, ComponentOverrides, ComponentProperty, ComponentPropertyValue, ComponentRegistry, ComponentStateMachine, ComponentVariant, ComponentVariantMatrix, InstanceNestedOverrideEntry, InstanceSyncStatus, MasterComponent, MasterComponentSchema, OverrideDiffEntry, VariantDimension, VariantMatrixCell, VariantMatrixCombination } from './types.ts'
+import { applyPropertyValueToElement, createVariantPresetDimensions, findMatchingVariantCombination, getEffectiveVariantDimensions, releaseComponentResources, validPropertyValue, validateComponentProperties, validatePropertyTargets, validateVariantMatrix } from './componentProperties.ts'
 import { createDefaultStateMachine, getEffectiveStateMachine, validateStateMachine } from './stateMachine.ts'
 import { EMPTY_COMMENTS, validateComments } from '../comments/model.ts'
 import type { CommentDocument } from '../comments/types.ts'
@@ -1229,6 +1229,84 @@ export class SceneStore {
     })
   }
 
+  /** Set or replace a single variant combination in the master's variant matrix */
+  setVariantCombination(masterId: string, combination: VariantMatrixCombination): void {
+    const master = this.require(masterId)
+    if (!isMasterComponent(master)) throw new Error('Choose a master component')
+    if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master and finish the active edit first')
+    const currentMatrix = master.component.variantMatrix ?? {
+      dimensions: Object.entries(combination.dimensions).map(([k, v]) => ({
+        id: crypto.randomUUID(),
+        name: k,
+        values: [v],
+        defaultValue: v,
+      })),
+      combinations: [],
+    }
+    const existingIndex = currentMatrix.combinations.findIndex(c =>
+      c.id === combination.id ||
+      (Object.keys(combination.dimensions).every(k => (c.dimensions[k] ?? c.dimensions[k.toLowerCase()]) === combination.dimensions[k]) &&
+       Object.keys(c.dimensions).length === Object.keys(combination.dimensions).length)
+    )
+    const nextCombinations = [...currentMatrix.combinations]
+    if (existingIndex >= 0) {
+      nextCombinations[existingIndex] = combination
+    } else {
+      nextCombinations.push(combination)
+    }
+    this.setVariantMatrix(masterId, {
+      dimensions: currentMatrix.dimensions,
+      combinations: nextCombinations,
+    })
+  }
+
+  /** Get a variant combination matching the given dimension values */
+  getVariantCombination(masterId: string, dimensions: Record<string, string>): VariantMatrixCombination | undefined {
+    const master = this.getMasterComponent(masterId)
+    if (!master?.component.variantMatrix) return undefined
+    return master.component.variantMatrix.combinations.find(c =>
+      Object.keys(dimensions).every(k => (c.dimensions[k] ?? c.dimensions[k.toLowerCase()]) === dimensions[k]) &&
+      Object.keys(c.dimensions).length === Object.keys(dimensions).length
+    )
+  }
+
+  /** Get all variant matrix combinations for a master component */
+  getVariantMatrixCombinations(masterId: string): readonly VariantMatrixCombination[] {
+    const master = this.getMasterComponent(masterId)
+    return master?.component.variantMatrix?.combinations ?? Object.freeze([])
+  }
+
+  /** Get the active variant combination for an instance, based on its active property values */
+  getActiveVariantCombination(instanceId: string): VariantMatrixCombination | undefined {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') return undefined
+    const master = this.state.elements[root.component.masterId]
+    if (!master || master.component?.kind !== 'master' || !master.component.variantMatrix) return undefined
+    const activeDims = this.resolveActiveVariantDimensions(master, root)
+    return findMatchingVariantCombination(master.component.variantMatrix, activeDims)
+  }
+
+  /** Directly set layer overrides for a variant combination */
+  setVariantCombinationOverrides(masterId: string, combinationId: string, layers: Record<string, ComponentOverrides>): void {
+    const master = this.require(masterId)
+    if (!isMasterComponent(master)) throw new Error('Choose a master component')
+    if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master and finish the active edit first')
+    const currentMatrix = master.component.variantMatrix
+    if (!currentMatrix) throw new Error('No variant matrix found on master component')
+    const index = currentMatrix.combinations.findIndex(c => c.id === combinationId)
+    if (index === -1) throw new Error(`Combination '${combinationId}' not found`)
+    const updated = {
+      ...currentMatrix.combinations[index],
+      layers: { ...layers },
+    }
+    const nextCombinations = [...currentMatrix.combinations]
+    nextCombinations[index] = updated
+    this.setVariantMatrix(masterId, {
+      dimensions: currentMatrix.dimensions,
+      combinations: nextCombinations,
+    })
+  }
+
   /** Apply pre-configured design system matrix presets (Size, State, Theme, Full Matrix) */
   applyVariantMatrixPreset(masterId: string, preset: 'size' | 'state' | 'theme' | 'full-matrix'): void {
     const master = this.require(masterId)
@@ -2005,6 +2083,190 @@ export class SceneStore {
     this.ordered(elements, parentId, siblings)
     this.commit(elements, parentId === null ? siblings : this.state.rootIds, [id], `Insert ${master.name} instance`)
     return this.state.elements[id]
+  }
+
+  /** Check if an instance can be swapped to another master component */
+  componentSwapReason(instanceId: string, newMasterId: string): string | null {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance' || root.component.instanceId !== root.id) {
+      return 'Choose a component instance root to swap'
+    }
+    if (this.isLocked(root.id)) {
+      return 'Unlock the instance first'
+    }
+    if (this.history.getSnapshot().active) {
+      return 'Finish the active edit first'
+    }
+    const newMaster = this.state.elements[newMasterId]
+    if (!newMaster || newMaster.component?.kind !== 'master') {
+      return 'Choose a valid master component'
+    }
+    return null
+  }
+
+  /** Return true if the instance can be swapped to newMasterId */
+  canSwapComponentInstance(instanceId: string, newMasterId: string): boolean {
+    return this.componentSwapReason(instanceId, newMasterId) === null
+  }
+
+  /** Swap a component instance to a different master component, preserving position, sizing, and compatible overrides */
+  swapComponentInstance(
+    instanceId: string,
+    newMasterId: string,
+    options: {
+      preserveOverrides?: boolean
+      preserveDimensions?: boolean
+    } = {}
+  ): SceneElement {
+    const reason = this.componentSwapReason(instanceId, newMasterId)
+    if (reason) throw new Error(reason)
+
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || !isComponentInstance(root)) {
+      throw new Error('Choose a component instance root to swap')
+    }
+    const oldMasterId = root.component.masterId
+    const oldMaster = this.state.elements[oldMasterId]
+    const newMaster = this.getMasterComponent(newMasterId)
+    if (!newMaster) {
+      throw new Error('Choose a valid master component')
+    }
+
+    if (newMaster.id === oldMasterId) {
+      return root
+    }
+
+    const preserveOverrides = options.preserveOverrides !== false
+    const preserveDimensions = options.preserveDimensions ?? true
+
+    const oldSubtree = subtree(this.state.elements, root.id)
+    const oldDescendants = oldSubtree.filter(n => n.id !== root.id)
+    const newMasterLayers = subtree(this.state.elements, newMaster.id)
+    const newMasterDescendants = newMasterLayers.filter(n => n.id !== newMaster.id)
+
+    // Map compatible layer overrides from old instance layers to new master layers
+    const mappedOverridesBySourceId = new Map<string, ComponentOverrides>()
+    const transferredPropertyValues: Record<string, ComponentPropertyValue> = {}
+
+    if (preserveOverrides) {
+      // 1. Map property values (if new master has matching property or variant dimension)
+      if (root.component.propertyValues) {
+        const newProps = newMaster.component.properties ?? []
+        const newDims = newMaster.component.variantMatrix?.dimensions ?? []
+        for (const [key, rawVal] of Object.entries(root.component.propertyValues)) {
+          const val = rawVal as ComponentPropertyValue
+          const matchingProp = newProps.find((p: ComponentProperty) => p.id === key || p.name.toLowerCase() === key.toLowerCase())
+          const matchingDim = newDims.find((d: VariantDimension) => d.id === key || d.name.toLowerCase() === key.toLowerCase())
+          if (matchingProp && validPropertyValue(matchingProp, val)) {
+            transferredPropertyValues[matchingProp.id] = val
+          } else if (matchingDim && typeof val === 'string' && matchingDim.values.includes(val)) {
+            transferredPropertyValues[matchingDim.name] = val
+          }
+        }
+      }
+
+      // 2. Map descendant layer overrides
+      const matchedNewSourceIds = new Set<string>()
+
+      for (const oldNode of oldDescendants) {
+        if (!isComponentInstance(oldNode)) continue
+        const overrides = oldNode.component.overrides
+        const hasOverrides = Object.keys(overrides.properties ?? {}).length > 0 ||
+          Object.keys(overrides.style ?? {}).length > 0 ||
+          Object.keys(overrides.tokenBindings ?? {}).length > 0 ||
+          Object.keys(overrides.sharedStyleBindings ?? {}).length > 0
+        if (!hasOverrides) continue
+
+        // Try exact sourceId match first
+        let targetSource = newMasterDescendants.find(s => s.id === oldNode.component.sourceId && !matchedNewSourceIds.has(s.id))
+        // Next try name match
+        if (!targetSource) {
+          targetSource = newMasterDescendants.find(s => s.name.trim().toLowerCase() === oldNode.name.trim().toLowerCase() && !matchedNewSourceIds.has(s.id))
+        }
+        // Fallback: match by unique element type if types match
+        if (!targetSource) {
+          const sameType = newMasterDescendants.filter(s => s.type === oldNode.type && !matchedNewSourceIds.has(s.id))
+          if (sameType.length === 1) {
+            targetSource = sameType[0]
+          }
+        }
+
+        if (targetSource) {
+          matchedNewSourceIds.add(targetSource.id)
+          mappedOverridesBySourceId.set(targetSource.id, structuredClone(overrides))
+        }
+      }
+    }
+
+    // Determine target width/height
+    const width = preserveDimensions ? root.width : newMaster.width
+    const height = preserveDimensions ? root.height : newMaster.height
+
+    const elements = { ...this.state.elements }
+
+    // Remove old descendants
+    for (const oldDesc of oldDescendants) {
+      delete elements[oldDesc.id]
+    }
+
+    // Create stub descendant layers for the new master with mapped overrides
+    const sourceIdToNewId = new Map<string, string>()
+    sourceIdToNewId.set(newMaster.id, root.id)
+
+    for (const source of newMasterDescendants) {
+      const newId = crypto.randomUUID()
+      sourceIdToNewId.set(source.id, newId)
+    }
+
+    for (const source of newMasterDescendants) {
+      const newId = sourceIdToNewId.get(source.id)!
+      const parentId = sourceIdToNewId.get(source.parentId!) ?? root.id
+      const overrides = mappedOverridesBySourceId.get(source.id) ?? {}
+      const stubChild = freezeElement({
+        ...source,
+        id: newId,
+        parentId,
+        component: {
+          kind: 'instance',
+          masterId: newMaster.id,
+          sourceId: source.id,
+          instanceId: root.id,
+          overrides,
+        },
+        ...(source.type === 'frame' ? { children: source.children.map(cid => sourceIdToNewId.get(cid)!).filter(Boolean) } : {}),
+      })
+      elements[newId] = stubChild
+    }
+
+    // Update root instance element
+    const directChildIds = newMaster.type === 'frame'
+      ? newMaster.children.map(cid => sourceIdToNewId.get(cid)!).filter(Boolean)
+      : []
+
+    const rootOverrides = preserveOverrides ? (root.component.overrides ?? {}) : {}
+    const nextRoot = freezeElement({
+      ...root,
+      name: root.name === oldMaster?.name ? newMaster.name : root.name,
+      width,
+      height,
+      component: {
+        kind: 'instance',
+        masterId: newMaster.id,
+        sourceId: newMaster.id,
+        instanceId: root.id,
+        overrides: rootOverrides,
+        ...(Object.keys(transferredPropertyValues).length > 0 ? { propertyValues: transferredPropertyValues } : {}),
+      },
+      ...(newMaster.type === 'frame' ? { children: directChildIds } : {}),
+    })
+    elements[root.id] = nextRoot
+
+    // Synchronize to validate and apply properties/tokens
+    const tokens = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId)
+    const synchronized = synchronizeComponents(elements, tokens, this.state.elements, this.state.styleLibrary)
+
+    this.commit(synchronized, this.state.rootIds, [root.id], `Swap instance to ${newMaster.name}`)
+    return this.state.elements[root.id]
   }
 
   /** A descendant action always detaches the complete instance without changing its appearance. */
@@ -2810,6 +3072,170 @@ export class SceneStore {
       }),
     }
     this.commit(elements, this.state.rootIds, this.state.selection, `Reset ${resetLabel} override on ${node.name}`)
+  }
+
+  /** Return all nested layer overrides for an instance tree */
+  getInstanceNestedOverrides(instanceId: string): readonly InstanceNestedOverrideEntry[] {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') return Object.freeze([])
+    const layers = subtree(this.state.elements, root.id)
+    const entries: InstanceNestedOverrideEntry[] = []
+
+    for (const layer of layers) {
+      if (layer.component?.kind === 'instance') {
+        const overrides = layer.component.overrides
+        const channels: string[] = []
+        for (const k of Object.keys(overrides.properties ?? {})) channels.push(`properties.${k}`)
+        for (const k of Object.keys(overrides.style ?? {})) channels.push(`style.${k}`)
+        for (const k of Object.keys(overrides.tokenBindings ?? {})) channels.push(`tokenBindings.${k}`)
+        for (const k of Object.keys(overrides.sharedStyleBindings ?? {})) channels.push(`sharedStyleBindings.${k}`)
+        if (channels.length > 0) {
+          entries.push({
+            layerId: layer.id,
+            sourceId: layer.component.sourceId,
+            layerName: layer.name,
+            overrides,
+            channels: Object.freeze(channels),
+          })
+        }
+      }
+    }
+    return Object.freeze(entries)
+  }
+
+  /** Reset overrides on a specific nested layer within an instance, by layer ID or source ID */
+  resetNestedLayerOverrides(instanceId: string, layerIdOrSourceId: string): void {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') throw new Error('Choose a component instance')
+    const layers = subtree(this.state.elements, root.id)
+    const target = layers.find(l => l.id === layerIdOrSourceId || (l.component?.kind === 'instance' && l.component.sourceId === layerIdOrSourceId))
+    if (!target) throw new Error('Target layer not found in instance')
+    this.resetComponentOverrides(target.id)
+  }
+
+  /** Synchronize an instance with its master component, optionally resetting overrides or specific channels */
+  syncInstanceWithMaster(
+    instanceId: string,
+    options: {
+      resetOverrides?: boolean
+      channels?: readonly string[]
+    } = {}
+  ): SceneElement {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') throw new Error('Choose a component instance')
+    if (this.isLocked(root.id) || this.history.getSnapshot().active) throw new Error('Unlock the instance and finish the active edit first')
+    const master = this.require(root.component.masterId)
+    if (master.component?.kind !== 'master') throw new Error('Choose a master component')
+
+    if (options.resetOverrides) {
+      this.resetAllComponentOverrides(root.id)
+      return this.require(root.id)
+    }
+
+    if (options.channels && options.channels.length > 0) {
+      const layers = subtree(this.state.elements, root.id)
+      this.batch(() => {
+        for (const layer of layers) {
+          if (layer.component?.kind === 'instance') {
+            for (const ch of options.channels!) {
+              try {
+                this.resetPropertyOverride(layer.id, ch)
+              } catch {
+                // Ignore if channel not present on layer
+              }
+            }
+          }
+        }
+      }, `Sync channels from ${master.name}`)
+      return this.require(root.id)
+    }
+
+    // Force reconciliation with master without resetting existing overrides
+    const tokens = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId)
+    const synchronized = synchronizeComponents(this.state.elements, tokens, undefined, this.state.styleLibrary)
+    this.commit(synchronized, this.state.rootIds, this.state.selection, `Sync ${root.name} with master`)
+    return this.require(root.id)
+  }
+
+  /** Alias for syncInstanceWithMaster */
+  pullFromMaster(
+    instanceId: string,
+    options: {
+      resetOverrides?: boolean
+      channels?: readonly string[]
+    } = {}
+  ): SceneElement {
+    return this.syncInstanceWithMaster(instanceId, options)
+  }
+
+  /** Synchronize all living instances of a master across the document */
+  syncAllInstancesWithMaster(masterId: string, options: { resetOverrides?: boolean } = {}): void {
+    const master = this.require(masterId)
+    if (master.component?.kind !== 'master') throw new Error('Choose a master component')
+    if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master first')
+
+    const instances = this.getComponentInstances(masterId)
+    if (!instances.length) return
+
+    this.batch(() => {
+      for (const inst of instances) {
+        if (options.resetOverrides) {
+          this.resetAllComponentOverrides(inst.id)
+        } else {
+          this.syncInstanceWithMaster(inst.id)
+        }
+      }
+    }, `Sync all ${instances.length} ${master.name} instances with master`)
+  }
+
+  /** Check if an instance is completely in sync with its master (no local overrides) */
+  isInstanceInSync(instanceId: string): boolean {
+    return this.getInstanceSyncStatus(instanceId).isSynced
+  }
+
+  /** Get detailed sync status between an instance and its master */
+  getInstanceSyncStatus(instanceId: string): InstanceSyncStatus {
+    const root = componentRoot(this.state.elements, instanceId)
+    if (!root || root.component?.kind !== 'instance') {
+      return { isSynced: true, overrideCount: 0, overriddenLayers: 0, modifiedChannels: Object.freeze([]) }
+    }
+    const master = this.state.elements[root.component.masterId]
+    if (!master || master.component?.kind !== 'master') {
+      return { isSynced: false, overrideCount: 0, overriddenLayers: 0, modifiedChannels: Object.freeze([]) }
+    }
+
+    const layers = subtree(this.state.elements, root.id)
+    const modifiedChannels = new Set<string>()
+    let overriddenLayers = 0
+    let totalOverrides = 0
+
+    // Check dynamic property values
+    if (root.component.propertyValues) {
+      for (const [k] of Object.entries(root.component.propertyValues)) {
+        modifiedChannels.add(`propertyValues.${k}`)
+        totalOverrides++
+      }
+    }
+
+    for (const layer of layers) {
+      if (layer.component?.kind === 'instance') {
+        const diffs = getComponentOverrideDiff(layer, master, undefined, undefined, this.state.elements)
+        if (diffs.length > 0) {
+          overriddenLayers++
+          for (const d of diffs) {
+            modifiedChannels.add(d.channel)
+            totalOverrides++
+          }
+        }
+      }
+    }
+
+    return {
+      isSynced: totalOverrides === 0,
+      overrideCount: totalOverrides,
+      overriddenLayers,
+      modifiedChannels: Object.freeze(Array.from(modifiedChannels)),
+    }
   }
 
   /** Automatically detect and expose dynamic properties for text, kinetic typography, shaders, and visual parameters. */
