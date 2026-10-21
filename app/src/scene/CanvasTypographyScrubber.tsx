@@ -229,9 +229,10 @@ export const CanvasTypographyScrubber = memo(function CanvasTypographyScrubber({
   if (node.textOnPath?.enabled) visibleAxes.push('offset')
   if (node.kinetic?.enabled) visibleAxes.push('phase', 'ampl')
 
-  const isTnumActive = Boolean(node.openTypeFeatures?.tnum)
-  const isSaltActive = Boolean(node.openTypeFeatures?.salt)
   const isLigaActive = node.openTypeFeatures?.liga !== false
+  const isCaltActive = node.openTypeFeatures?.calt !== false
+  const isFracActive = Boolean(node.openTypeFeatures?.frac)
+  const isTnumActive = Boolean(node.openTypeFeatures?.tnum)
   const isGuidesActive = Boolean(node.showOpticalMetrics)
 
   return (
@@ -287,6 +288,54 @@ export const CanvasTypographyScrubber = memo(function CanvasTypographyScrubber({
           </button>
           <button
             type="button"
+            className={`canvas-typo-toggle-pill ${isLigaActive ? 'active' : ''}`}
+            onClick={() => {
+              store.update(node.id, 'text', {
+                openTypeFeatures: {
+                  ...(node.openTypeFeatures ?? {}),
+                  liga: !isLigaActive,
+                },
+              })
+            }}
+            title={isLigaActive ? 'Disable standard ligatures' : 'Enable standard ligatures (liga)'}
+            aria-label="Toggle standard ligatures"
+          >
+            <span>LIGA</span>
+          </button>
+          <button
+            type="button"
+            className={`canvas-typo-toggle-pill ${isCaltActive ? 'active' : ''}`}
+            onClick={() => {
+              store.update(node.id, 'text', {
+                openTypeFeatures: {
+                  ...(node.openTypeFeatures ?? {}),
+                  calt: !isCaltActive,
+                },
+              })
+            }}
+            title={isCaltActive ? 'Disable contextual alternates' : 'Enable contextual alternates (calt)'}
+            aria-label="Toggle contextual alternates"
+          >
+            <span>CALT</span>
+          </button>
+          <button
+            type="button"
+            className={`canvas-typo-toggle-pill ${isFracActive ? 'active' : ''}`}
+            onClick={() => {
+              store.update(node.id, 'text', {
+                openTypeFeatures: {
+                  ...(node.openTypeFeatures ?? {}),
+                  frac: !isFracActive,
+                },
+              })
+            }}
+            title={isFracActive ? 'Disable fractions' : 'Enable fractions (frac)'}
+            aria-label="Toggle fractions"
+          >
+            <span>FRAC</span>
+          </button>
+          <button
+            type="button"
             className={`canvas-typo-toggle-pill ${isTnumActive ? 'active' : ''}`}
             onClick={() => {
               store.update(node.id, 'text', {
@@ -301,38 +350,6 @@ export const CanvasTypographyScrubber = memo(function CanvasTypographyScrubber({
             aria-label="Toggle tabular figures"
           >
             <span>TNUM</span>
-          </button>
-          <button
-            type="button"
-            className={`canvas-typo-toggle-pill ${isSaltActive ? 'active' : ''}`}
-            onClick={() => {
-              store.update(node.id, 'text', {
-                openTypeFeatures: {
-                  ...(node.openTypeFeatures ?? {}),
-                  salt: !isSaltActive,
-                },
-              })
-            }}
-            title={isSaltActive ? 'Disable stylistic alternates' : 'Enable stylistic alternates (salt)'}
-            aria-label="Toggle stylistic alternates"
-          >
-            <span>SALT</span>
-          </button>
-          <button
-            type="button"
-            className={`canvas-typo-toggle-pill ${isLigaActive ? 'active' : ''}`}
-            onClick={() => {
-              store.update(node.id, 'text', {
-                openTypeFeatures: {
-                  ...(node.openTypeFeatures ?? {}),
-                  liga: !isLigaActive,
-                },
-              })
-            }}
-            title={isLigaActive ? 'Disable standard ligatures' : 'Enable standard ligatures (liga)'}
-            aria-label="Toggle standard ligatures"
-          >
-            <span>LIGA</span>
           </button>
           <button
             type="button"
