@@ -49,14 +49,18 @@ PY
 [ -z "$summary" ] && { log "Empty summary."; exit 0; }
 
 # Suppress duplicate notifications for the same finding set unless NOTIFY_ALWAYS=1.
+# The fingerprint includes the check set AND the minute of detection, so a NEW
+# incident (even with an identical message) is always reported, while a
+# re-run of the same still-open incident within the same minute is not.
 if [ "${NOTIFY_ALWAYS:-0}" != "1" ]; then
   fingerprint=$(printf '%s' "$summary" | md5sum | awk '{print $1}')
+  minute=$(date -u '+%Y%m%d%H%M')
   prev=$(cat "$LAST_NOTIFY_FILE" 2>/dev/null || echo "")
-  if [ "$fingerprint" = "$prev" ]; then
-    log "Same finding set as last time, skipping notification."
+  if [ "$fingerprint" = "$prev" ] && [ "${prev%%:*}" = "$minute" ]; then
+    log "Same finding set within the same minute, skipping notification."
     exit 0
   fi
-  echo "$fingerprint" > "$LAST_NOTIFY_FILE"
+  echo "$fingerprint:$minute" > "$LAST_NOTIFY_FILE"
 fi
 
 # Telegram has a 4096 char limit per message.
