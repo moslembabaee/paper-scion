@@ -15,6 +15,8 @@ import { ArrangeBar } from './ArrangeBar'
 import { BooleanBar } from './BooleanBar'
 import { MaskInspector } from './MaskInspector'
 import { AutoLayoutInspector } from './AutoLayoutInspector'
+import { ConstraintsInspector } from './ConstraintsInspector'
+import { LayoutGridsInspector } from './LayoutGridsInspector'
 import { ComponentInspector } from './ComponentPanel'
 import type { MorphTarget } from '../morph/types'
 import { TypographyStudio } from './TypographyStudio'
@@ -351,6 +353,8 @@ export function ElementInspector({ store, controller, grid, onGridChange, onOpen
       </div>
       <SharedStyleInspector key={`shared-${node.id}`} store={store} node={node} />
       <AutoLayoutInspector key={`layout-${node.id}`} node={node} parent={parent} store={store} />
+      <ConstraintsInspector key={`constraints-${node.id}`} node={node} parent={parent} store={store} />
+      {node.type === 'frame' && <LayoutGridsInspector key={`grids-${node.id}`} node={node} store={store} />}
       <div className="inspector-section">
         <span className="section-caption">APPEARANCE</span>
         <div className="property-heading">

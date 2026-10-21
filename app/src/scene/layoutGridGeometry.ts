@@ -203,17 +203,23 @@ export function getLayoutGridSnapTargets(
       }
     } else if (grid.type === 'grid') {
       const size = Math.max(8, grid.sectionSize ?? 120)
-      const numCols = Math.floor(frame.width / size)
-      const numRows = Math.floor(frame.height / size)
+      const numCols = Math.min(200, Math.floor(frame.width / size))
+      const numRows = Math.min(200, Math.floor(frame.height / size))
       for (let c = 0; c < numCols; c++) {
-        for (let r = 0; r < numRows; r++) {
-          targets.push({
-            x: frameWorldBounds.x + c * size,
-            y: frameWorldBounds.y + r * size,
-            width: size,
-            height: size,
-          })
-        }
+        targets.push({
+          x: frameWorldBounds.x + c * size,
+          y: frameWorldBounds.y,
+          width: size,
+          height: frameWorldBounds.height,
+        })
+      }
+      for (let r = 0; r < numRows; r++) {
+        targets.push({
+          x: frameWorldBounds.x,
+          y: frameWorldBounds.y + r * size,
+          width: frameWorldBounds.width,
+          height: size,
+        })
       }
     }
   }

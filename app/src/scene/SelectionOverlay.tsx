@@ -23,6 +23,7 @@ import { MeasurementHUD } from './MeasurementHUD'
 import { measurementHit } from './measurementGeometry'
 import { CanvasTypographyScrubber } from './CanvasTypographyScrubber'
 import { TextPathCanvasOverlay } from './TextPathCanvasOverlay'
+import { getLayoutGridSnapTargets } from './layoutGridGeometry'
 
 type HandleId = ResizeHandle | 'rotate'
 const HANDLES: readonly { id: ResizeHandle; x: number; y: number; angle: number }[] = [
@@ -240,7 +241,7 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
         if (drag.type !== 'spacing') {
           drag.origins = captureOrigins(snapshot, snapshot.selection)
           const selected = new Set(drag.origins.map(origin => origin.id))
-          drag.targets = Object.values(snapshot.elements).filter(node => {
+          const elementTargets = Object.values(snapshot.elements).filter(node => {
             if (!store.isVisible(node.id)) return false
             let current: typeof node | undefined = node
             while (current) {
@@ -249,6 +250,16 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
             }
             return true
           }).map(node => getWorldBounds(snapshot, node.id))
+
+          const gridTargets: Bounds[] = []
+          for (const node of Object.values(snapshot.elements)) {
+            if (node.type === 'frame' && store.isVisible(node.id) && !selected.has(node.id) && node.layoutGrids?.length) {
+              const frameWorldBounds = getWorldBounds(snapshot, node.id)
+              gridTargets.push(...getLayoutGridSnapTargets(node, frameWorldBounds))
+            }
+          }
+
+          drag.targets = [...elementTargets, ...gridTargets]
         }
       }
       controller.stop()
