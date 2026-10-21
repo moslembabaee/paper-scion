@@ -35,6 +35,9 @@ import {
   generateCompoundSVGMask,
   generateCompoundHierarchyMarkup,
   generateCssClipPath,
+  generateClippedSVGExport,
+  clipPathWithCompound,
+  computePolygonClipping,
 } from '../src/scene/cagEngine.ts'
 import { createRegularPolygon, createStarPolygon } from '../src/scene/polygonGeometry.ts'
 import { sceneToSVG } from '../src/io/svg.ts'
@@ -314,4 +317,189 @@ test('SVG path clipping and path-string generation for compound shapes', () => {
   assert.equal(converted.type, 'path')
   assert.ok(converted.d)
   assert.ok(converted.nodes)
+})
+
+test('Reversible sub-path anchor editing on compound operands with undo and redo', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'base', name: 'Base Rect', x: 0, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'cutter', name: 'Cutter Rect', x: 50, y: 0, width: 60, height: 60 })
+  store.select(['base', 'cutter'])
+
+  const compound = store.booleanSelection('subtract')
+  const initialD = compound.d
+  const initialArea = calculatePathArea(initialD)
+
+  // 1. Convert cutter to path so it has sub-path anchors
+  const cutterPath = store.convertBooleanOperandToPath(compound.id, 'cutter')
+  assert.equal(cutterPath.type, 'path')
+  assert.ok(cutterPath.nodes && cutterPath.nodes.length > 0)
+
+  // 2. Modify cutter's sub-path anchors to expand cutter downward (increasing overlap)
+  const originalContours = vectorToContours(cutterPath)
+  const modifiedContours = originalContours.map(contour => ({
+    ...contour,
+    anchors: contour.anchors.map(anchor => ({
+      ...anchor,
+      y: anchor.y > 30 ? anchor.y + 30 : anchor.y, // stretch height from 60 to 90
+    })),
+  }))
+
+  store.updateBooleanOperandNodes(compound.id, 'cutter', modifiedContours)
+  let updatedCompound = store.getSnapshot().elements[compound.id]
+  const modifiedArea = calculatePathArea(updatedCompound.d)
+
+  // Larger cutter subtracted -> remaining area must be smaller
+  assert.ok(modifiedArea < initialArea)
+  assert.notEqual(updatedCompound.d, initialD)
+
+  // 3. Undo restores previous anchor positions and compound outline
+  store.undo()
+  updatedCompound = store.getSnapshot().elements[compound.id]
+  close(calculatePathArea(updatedCompound.d), initialArea)
+
+  // 4. Redo re-applies anchor edits
+  store.redo()
+  updatedCompound = store.getSnapshot().elements[compound.id]
+  close(calculatePathArea(updatedCompound.d), modifiedArea)
+})
+
+test('Compound hierarchy transformations: invert, dissolve, revert to leaf shapes, and undo', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'r1', name: 'Rect 1', x: 0, y: 0, width: 100, height: 100 })
+  store.add('ellipse', { id: 'e1', name: 'Ellipse 1', x: 40, y: 40, width: 80, height: 80 })
+  store.add('rectangle', { id: 'r2', name: 'Rect 2', x: 80, y: 80, width: 60, height: 60 })
+  store.select(['r1', 'e1', 'r2'])
+
+  const root = store.booleanSelection('union')
+  store.groupBooleanOperands(root.id, ['e1', 'r2'], 'intersect')
+
+  let current = store.getSnapshot().elements[root.id]
+  const nested = current.boolean.operands.find(op => op.type === 'path' && op.boolean)
+  assert.ok(nested)
+
+  // 1. Invert operation on nested compound
+  store.invertBooleanOperation(root.id, nested.id)
+  current = store.getSnapshot().elements[root.id]
+  let currentNested = current.boolean.operands.find(op => op.id === nested.id)
+  // intersect inverted becomes subtract
+  assert.equal(currentNested.boolean.operation, 'subtract')
+
+  // 2. Dissolve nested compound group back into parent compound
+  store.dissolveCompound(root.id, nested.id)
+  current = store.getSnapshot().elements[root.id]
+  // Dissolving promotes the 2 grandchildren back to root operands (total: r1 + e1 + r2 = 3)
+  assert.equal(current.boolean.operands.length, 3)
+  assert.ok(current.boolean.operands.some(op => op.id === 'e1'))
+  assert.ok(current.boolean.operands.some(op => op.id === 'r2'))
+
+  // 3. Revert entire compound into independent top-level shapes
+  const releasedIds = store.revertCompound(root.id)
+  assert.equal(store.getSnapshot().elements[root.id], undefined)
+  assert.equal(releasedIds.length, 3)
+  for (const id of releasedIds) {
+    const el = store.getSnapshot().elements[id]
+    assert.ok(el)
+    assert.equal(el.visible, true)
+  }
+
+  // 4. Undo restores the compound shape
+  store.undo()
+  assert.ok(store.getSnapshot().elements[root.id])
+  assert.ok(store.getSnapshot().elements[root.id].boolean)
+})
+
+test('Boolean operand lifecycle: add, duplicate, mute/unmute, and extract', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'a', name: 'Shape A', x: 0, y: 0, width: 100, height: 100 })
+  store.add('rectangle', { id: 'b', name: 'Shape B', x: 50, y: 0, width: 100, height: 100 })
+  store.select(['a', 'b'])
+
+  const compound = store.booleanSelection('union')
+  const baseArea = calculatePathArea(compound.d)
+
+  // 1. Add operand
+  const extra = createElement('rectangle', { id: 'c', name: 'Shape C', x: 100, y: 0, width: 100, height: 100 })
+  store.addBooleanOperand(compound.id, extra)
+  let current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 3)
+  assert.ok(calculatePathArea(current.d) > baseArea)
+
+  // 2. Mute operand 'c' -> area drops back to baseArea
+  store.toggleBooleanOperandMute(compound.id, 'c')
+  current = store.getSnapshot().elements[compound.id]
+  assert.ok(current.boolean.mutedOperandIds.includes('c'))
+  close(calculatePathArea(current.d), baseArea)
+
+  // Unmute operand 'c'
+  store.toggleBooleanOperandMute(compound.id, 'c')
+  current = store.getSnapshot().elements[compound.id]
+  assert.ok(!current.boolean.mutedOperandIds || !current.boolean.mutedOperandIds.includes('c'))
+  assert.ok(calculatePathArea(current.d) > baseArea)
+
+  // 3. Duplicate operand 'b'
+  store.duplicateBooleanOperand(compound.id, 'b')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 4)
+
+  // 4. Extract operand 'c' as a standalone scene element
+  store.extractBooleanOperand(compound.id, 'c')
+  current = store.getSnapshot().elements[compound.id]
+  assert.equal(current.boolean.operands.length, 3)
+  // 'c' is now an independent element in the scene
+  assert.ok(store.getSnapshot().elements['c'])
+})
+
+test('Standalone clipped SVG export with generateClippedSVGExport and polygon clipping', () => {
+  const compound = createElement('path', {
+    id: 'cutter-comp',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    d: 'M 10 10 H 90 V 90 H 10 Z',
+    viewBox: [0, 0, 100, 100],
+    fillRule: 'nonzero',
+  })
+  const target = createElement('rectangle', {
+    id: 'target-rect',
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 100,
+    style: { fill: '#3b82f6' },
+  })
+
+  // 1. generateClippedSVGExport
+  const clippedExport = generateClippedSVGExport(compound, target)
+  assert.ok(clippedExport.includes('<svg xmlns="http://www.w3.org/2000/svg"'))
+  assert.ok(clippedExport.includes('<clipPath id="clip-cutter-comp"'))
+  assert.ok(clippedExport.includes('clip-path="url(#clip-cutter-comp)"'))
+  assert.ok(clippedExport.includes('</svg>'))
+
+  // 2. clipPathWithCompound
+  const result = clipPathWithCompound(target, compound, 'intersect')
+  assert.ok(result.d)
+  close(calculatePathArea(result.d), 6400) // (90 - 10)^2 = 80 * 80 = 6400
+
+  // 3. Sutherland-Hodgman computePolygonClipping
+  const subjectPoly = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ]
+  const clipPoly = [
+    { x: 20, y: 20 },
+    { x: 80, y: 20 },
+    { x: 80, y: 80 },
+    { x: 20, y: 80 },
+  ]
+  const clippedPoints = computePolygonClipping(subjectPoly, clipPoly)
+  assert.equal(clippedPoints.length, 4)
+  for (const expectedPt of clipPoly) {
+    assert.ok(
+      clippedPoints.some(pt => Math.abs(pt.x - expectedPt.x) < 1e-4 && Math.abs(pt.y - expectedPt.y) < 1e-4),
+      `Expected point (${expectedPt.x}, ${expectedPt.y}) to be in clipped polygon`
+    )
+  }
 })
