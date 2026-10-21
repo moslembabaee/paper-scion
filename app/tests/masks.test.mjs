@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SceneStore } from '../src/scene/store.ts'
-import { frameMask, maskPathData, shapeContainsWorldPoint } from '../src/scene/maskGeometry.ts'
+import { frameMask, maskPathData, shapeContainsWorldPoint, getDirectMask, getMaskedChildren, getMaskHierarchy, cycleNextMaskMode } from '../src/scene/maskGeometry.ts'
 import { getWorldMatrix } from '../src/scene/geometry.ts'
 import { measurementHit } from '../src/scene/measurementGeometry.ts'
 import { sceneToSVG } from '../src/io/svg.ts'
@@ -290,4 +290,162 @@ test('masking across WebGL shader surfaces and SVG export fidelity', () => {
   assert.match(svg, /mask="url\(#paper-export-/)
   assert.match(svg, /mask-type="luminance"|<mask/)
 })
+
+test('mask hierarchy inspection correctly identifies roles, sources, masked elements, and modes', () => {
+  const store = new SceneStore()
+  store.add('frame', { id: 'group', width: 300, height: 300, clipContent: false, style: { fill: null } })
+  store.add('rectangle', { id: 'layer1', parentId: 'group', width: 100, height: 100 })
+  store.add('rectangle', { id: 'layer2', parentId: 'group', width: 150, height: 150 })
+  store.add('path', { id: 'mask', parentId: 'group', width: 200, height: 200, d: 'M0 0H200V200H0Z' })
+  store.add('rectangle', { id: 'outside', width: 50, height: 50 })
+  store.setMask('mask', true, 'alpha')
+  store.setMaskInverted('mask', true)
+
+  const elements = store.getSnapshot().elements
+
+  // 1. Check direct mask lookup
+  assert.equal(getDirectMask(elements, 'layer1')?.id, 'mask')
+  assert.equal(getDirectMask(elements, 'layer2')?.id, 'mask')
+  assert.equal(getDirectMask(elements, 'mask'), undefined)
+  assert.equal(getDirectMask(elements, 'outside'), undefined)
+  assert.equal(store.getMaskForElement('layer1')?.id, 'mask')
+
+  // 2. Check masked children lookup
+  const masked = getMaskedChildren(elements, 'mask')
+  assert.equal(masked.length, 2)
+  assert.deepEqual(masked.map(m => m.id).sort(), ['layer1', 'layer2'])
+  assert.deepEqual(store.getMaskedChildren('mask').map(m => m.id).sort(), ['layer1', 'layer2'])
+
+  // 3. Inspect mask-source role
+  const maskHierarchy = getMaskHierarchy(elements, 'mask')
+  assert.equal(maskHierarchy.role, 'mask-source')
+  assert.equal(maskHierarchy.isMask, true)
+  assert.equal(maskHierarchy.isMasked, false)
+  assert.equal(maskHierarchy.isMaskGroup, false)
+  assert.equal(maskHierarchy.mode, 'alpha')
+  assert.equal(maskHierarchy.inverted, true)
+  assert.equal(maskHierarchy.maskedElements?.length, 2)
+  assert.deepEqual(store.getMaskHierarchy('mask'), maskHierarchy)
+
+  // 4. Inspect mask-group role
+  const groupHierarchy = getMaskHierarchy(elements, 'group')
+  assert.equal(groupHierarchy.role, 'mask-group')
+  assert.equal(groupHierarchy.isMaskGroup, true)
+  assert.equal(groupHierarchy.isMask, false)
+  assert.equal(groupHierarchy.maskSource?.id, 'mask')
+
+  // 5. Inspect masked-content role
+  const childHierarchy = getMaskHierarchy(elements, 'layer1')
+  assert.equal(childHierarchy.role, 'masked-content')
+  assert.equal(childHierarchy.isMasked, true)
+  assert.equal(childHierarchy.maskSource?.id, 'mask')
+
+  // 6. Inspect outside element
+  const outsideHierarchy = getMaskHierarchy(elements, 'outside')
+  assert.equal(outsideHierarchy.role, 'none')
+  assert.equal(outsideHierarchy.isMask, false)
+  assert.equal(outsideHierarchy.isMasked, false)
+  assert.equal(outsideHierarchy.isMaskGroup, false)
+
+  // 7. Cycle mask mode
+  assert.equal(cycleNextMaskMode('vector'), 'alpha')
+  assert.equal(cycleNextMaskMode('alpha'), 'luminance')
+  assert.equal(cycleNextMaskMode('luminance'), 'vector')
+
+  // store.cycleMaskMode
+  assert.equal(store.getSnapshot().elements.mask.mask.mode, 'alpha')
+  store.cycleMaskMode('mask')
+  assert.equal(store.getSnapshot().elements.mask.mask.mode, 'luminance')
+  store.cycleMaskMode('mask')
+  assert.equal(store.getSnapshot().elements.mask.mask.mode, 'vector')
+  store.cycleMaskMode('mask')
+  assert.equal(store.getSnapshot().elements.mask.mask.mode, 'alpha')
+  store.undo()
+  assert.equal(store.getSnapshot().elements.mask.mask.mode, 'vector')
+})
+
+test('luminance threshold clipping with granular cutoff values and inverted thresholds', () => {
+  const store = new SceneStore()
+  store.add('rectangle', { id: 'behind', width: 200, height: 200 })
+  store.add('frame', { id: 'group', width: 200, height: 200, clipContent: false, style: { fill: null } })
+  store.add('rectangle', { id: 'content', parentId: 'group', width: 200, height: 200 })
+  // Fill color rgb(100, 100, 100) -> luminance = 100/255 = 0.392
+  store.add('rectangle', { id: 'mask', parentId: 'group', width: 100, height: 100, style: { fill: 'rgb(100, 100, 100)' } })
+  store.setMask('mask', true, 'luminance')
+
+  // With threshold 0.35, luminance 0.392 >= 0.35 -> passes to content
+  store.setMaskLuminanceThreshold('mask', 0.35)
+  assert.equal(hit(store, 50, 50), 'content')
+
+  // With threshold 0.45, luminance 0.392 < 0.45 -> clipped to behind
+  store.setMaskLuminanceThreshold('mask', 0.45)
+  assert.equal(hit(store, 50, 50), 'behind')
+
+  // With inverted luminance mask, threshold 0.45: clipped becomes visible!
+  store.setMaskInverted('mask', true)
+  assert.equal(hit(store, 50, 50), 'content')
+
+  // Outside the mask shape (x=150, y=50):
+  // When inverted, area outside shape passes through to content!
+  assert.equal(hit(store, 150, 50), 'content')
+
+  // Export SVG with luminance threshold !== 0.5 generates feComponentTransfer filter
+  const svg = sceneToSVG(store.getSnapshot(), options)
+  assert.match(svg, /<filter id="paper-export-/)
+  assert.match(svg, /<feComponentTransfer>/)
+  assert.match(svg, /mask-type="luminance"/)
+})
+
+test('alpha channel masks with linear and radial gradients export to SVG with mask-type="alpha"', () => {
+  const store = new SceneStore()
+  store.add('frame', { id: 'group', width: 200, height: 200, clipContent: false, style: { fill: null } })
+  store.add('rectangle', { id: 'content', parentId: 'group', width: 200, height: 200, style: { fill: '#ff0000' } })
+  store.add('rectangle', {
+    id: 'mask',
+    parentId: 'group',
+    width: 200,
+    height: 200,
+    style: {
+      fill: '#ffffff',
+      gradient: {
+        type: 'linear',
+        angle: 90,
+        origin: { x: 0.5, y: 0.5 },
+        focalLength: 0,
+        spread: 1,
+        stops: [
+          { id: 's1', offset: 0, color: '#ffffff', opacity: 1 },
+          { id: 's2', offset: 1, color: '#ffffff', opacity: 0 },
+        ],
+      },
+    },
+  })
+  store.setMask('mask', true, 'alpha')
+
+  const svg = sceneToSVG(store.getSnapshot(), options)
+  assert.match(svg, /mask-type="alpha"/)
+  assert.match(svg, /<linearGradient id="paper-export-/)
+  assert.match(svg, /mask="url\(#paper-export-/)
+
+  // Inverted alpha mask includes white background rect and black cutout
+  store.setMaskInverted('mask', true)
+  const invertedSvg = sceneToSVG(store.getSnapshot(), options)
+  assert.match(invertedSvg, /<rect width="100%" height="100%" fill="white"\/>/)
+  assert.match(invertedSvg, /fill="black"/)
+})
+
+test('SVG export of selected layers within masked ancestor frames preserves alpha/luminance clip masks', () => {
+  const store = new SceneStore()
+  store.add('frame', { id: 'root-frame', width: 400, height: 400, clipContent: false, style: { fill: null } })
+  store.add('rectangle', { id: 'content-target', parentId: 'root-frame', width: 200, height: 200, style: { fill: '#3388ff' } })
+  store.add('ellipse', { id: 'mask-source', parentId: 'root-frame', width: 150, height: 150, style: { fill: '#ffffff' } })
+  store.setMask('mask-source', true, 'luminance')
+  store.setMaskLuminanceThreshold('mask-source', 0.6)
+
+  store.select(['content-target'])
+  const selSvg = sceneToSVG(store.getSnapshot(), { scope: 'selection', scale: 1, background: 'transparent' })
+  assert.match(selSvg, /mask-type="luminance"/)
+  assert.match(selSvg, /mask="url\(#paper-export-/)
+})
+
 

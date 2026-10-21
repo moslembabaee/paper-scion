@@ -1,10 +1,10 @@
 import type { Point } from '../canvas/types.ts'
 import { isVector, vectorContainsPoint, vectorPathData } from './booleanGeometry.ts'
 import { getWorldMatrix } from './geometry.ts'
-import type { FrameElement, GradientPaint, MaskClipMode, SceneElement, SceneSnapshot, VectorElement } from './types.ts'
+import type { FrameElement, GradientPaint, MaskClipMode, MaskElement, MaskHierarchyInfo, MaskHierarchyRole, SceneElement, SceneSnapshot, VectorElement } from './types.ts'
 import { interpolateGradientColor } from '../shaders/gradient.ts'
 
-export type MaskElement = VectorElement | FrameElement
+export type { MaskElement, MaskHierarchyInfo, MaskHierarchyRole } from './types.ts'
 export const canMask = (node: SceneElement): node is MaskElement => node.type === 'frame' || isVector(node)
 
 export const isVectorMask = (node: MaskElement): boolean => !node.mask?.mode || node.mask.mode === 'vector'
@@ -139,6 +139,7 @@ export function maskContainsWorldPoint(state: SceneSnapshot, mask: MaskElement, 
     if (mask.style.gradient && mask.style.gradient.stops?.length) {
       lum = sampleGradientLuminance(mask.style.gradient, u, v)
     }
+    lum *= (mask.style.opacity ?? 1)
     const threshold = mask.mask?.luminanceThreshold ?? 0.5
     const passes = lum >= threshold
     return inverted ? !passes : passes
@@ -191,5 +192,76 @@ export function shapeContainsWorldPoint(state: SceneSnapshot, node: SceneElement
 export function validateMaskGraph(elements: Readonly<Record<string, SceneElement>>): void {
   for (const node of Object.values(elements)) {
     if (node.type === 'frame' && node.children.filter(id => elements[id]?.mask).length > 1) throw new Error('A frame can have only one mask source')
+  }
+}
+
+/** Find the mask source that directly clips an element within its parent frame */
+export function getDirectMask(elements: Readonly<Record<string, SceneElement>>, id: string): MaskElement | undefined {
+  const node = elements[id]
+  if (!node || node.parentId === null) return undefined
+  const parent = elements[node.parentId]
+  if (!parent || parent.type !== 'frame') return undefined
+  const mask = frameMask(elements, parent)
+  if (!mask || mask.id === id) return undefined
+  return mask
+}
+
+/** Find all children in a frame that are clipped by the given mask source */
+export function getMaskedChildren(elements: Readonly<Record<string, SceneElement>>, maskId: string): SceneElement[] {
+  const mask = elements[maskId]
+  if (!mask || mask.parentId === null) return []
+  const parent = elements[mask.parentId]
+  if (!parent || parent.type !== 'frame') return []
+  const activeMask = frameMask(elements, parent)
+  if (activeMask?.id !== maskId) return []
+  return parent.children
+    .filter(childId => childId !== maskId)
+    .map(childId => elements[childId])
+    .filter((el): el is SceneElement => Boolean(el))
+}
+
+/** Cycle through mask clip modes: vector -> alpha -> luminance -> vector */
+export function cycleNextMaskMode(mode?: MaskClipMode): MaskClipMode {
+  if (mode === 'alpha') return 'luminance'
+  if (mode === 'luminance') return 'vector'
+  return 'alpha'
+}
+
+/** Get complete mask hierarchy inspection information for any scene node */
+export function getMaskHierarchy(elements: Readonly<Record<string, SceneElement>>, id: string): MaskHierarchyInfo {
+  const node = elements[id]
+  const isMask = Boolean(node?.mask)
+  const isMaskGroup = node?.type === 'frame' && Boolean(frameMask(elements, node as FrameElement))
+  const directMask = getDirectMask(elements, id)
+  const isMasked = Boolean(directMask)
+
+  let role: MaskHierarchyRole = 'none'
+  if (isMask) role = 'mask-source'
+  else if (isMaskGroup) role = 'mask-group'
+  else if (isMasked) role = 'masked-content'
+
+  const maskSource = isMask ? (node as MaskElement) : isMaskGroup ? frameMask(elements, node as FrameElement) : directMask
+  const parentFrame = isMaskGroup ? (node as FrameElement) : node?.parentId ? (elements[node.parentId] as FrameElement) : undefined
+  const maskedElements = maskSource ? getMaskedChildren(elements, maskSource.id) : undefined
+
+  const mode: MaskClipMode = maskSource?.mask?.mode ?? 'vector'
+  const luminanceThreshold = maskSource?.mask?.luminanceThreshold ?? 0.5
+  const inverted = Boolean(maskSource?.mask?.inverted)
+  const isolated = Boolean(maskSource?.mask?.isolated)
+  const enabled = maskSource?.mask?.enabled ?? false
+
+  return {
+    role,
+    isMask,
+    isMasked,
+    isMaskGroup,
+    maskSource,
+    maskedElements,
+    parentFrame,
+    mode,
+    luminanceThreshold,
+    inverted,
+    isolated,
+    enabled,
   }
 }

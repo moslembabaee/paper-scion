@@ -20,7 +20,7 @@ import { expandVectorOutline, type OutlineExpansionOptions } from './outlineExpa
 import { buildShapeTree, invertNodeOperation, dissolveTreeNode, shapeTreeToCompound, revertShapeTreeToElements, type ShapeTreeNode } from './shapeTree.ts'
 import { optimizeSvgBezierData } from './bezierOptimization.ts'
 import { serializePath, copyContours, parsePath, pathBounds, type PathNodes, type PathContour } from './pathGeometry.ts'
-import { canMask, validateMaskGraph } from './maskGeometry.ts'
+import { canMask, cycleNextMaskMode, getDirectMask, getMaskedChildren, getMaskHierarchy, validateMaskGraph, type MaskElement, type MaskHierarchyInfo } from './maskGeometry.ts'
 import { getWorldBounds } from './geometry.ts'
 import { unionBounds } from '../canvas/math.ts'
 import { FIXED_SIZING, invalidateLayoutTextMetrics, reflowAutoLayout } from './autoLayout.ts'
@@ -3408,6 +3408,26 @@ export class SceneStore {
       if (el.mask?.isolated && el.mask.enabled) return el.id
     }
     return null
+  }
+
+  cycleMaskMode(id: string): MaskClipMode {
+    const node = this.require(id)
+    if (!node.mask) throw new Error('Select a mask source')
+    const nextMode = cycleNextMaskMode(node.mask.mode)
+    this.setMaskMode(id, nextMode)
+    return nextMode
+  }
+
+  getMaskForElement(id: string): MaskElement | undefined {
+    return getDirectMask(this.state.elements, id)
+  }
+
+  getMaskedChildren(maskId: string): SceneElement[] {
+    return getMaskedChildren(this.state.elements, maskId)
+  }
+
+  getMaskHierarchy(id: string): MaskHierarchyInfo {
+    return getMaskHierarchy(this.state.elements, id)
   }
 
   /** Compute before publishing so errors leave the entire selection untouched. */
