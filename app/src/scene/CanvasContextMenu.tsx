@@ -510,7 +510,7 @@ export function CanvasContextMenu({ store, controller, position, onClose, onEdit
               <div className="context-menu-separator" />
               <div className="context-menu-header">Compound Shape</div>
               <MenuItem icon={<Copy size={14} />} label="Copy Clean SVG Path" onClick={handleCopyCleanPath} />
-              <MenuItem icon={<Split size={14} />} label="Flatten Compound Path" onClick={handleFlattenCompound} />
+              <MenuItem icon={<Split size={14} />} label="Flatten Compound Path" shortcut="⌘E" onClick={handleFlattenCompound} />
               <MenuItem icon={<Unlink size={14} />} label="Release Compound Sources" onClick={handleReleaseCompound} />
             </>
           )}

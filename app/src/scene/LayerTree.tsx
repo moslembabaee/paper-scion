@@ -75,6 +75,11 @@ const BooleanOperandRow = memo(function BooleanOperandRow({
   )
   const isSelected =
     selectedOperand?.compoundId === compoundId && selectedOperand?.operandId === source.id
+  const isIsolated = useSyncExternalStore(
+    store.subscribePathEditingTarget,
+    () => store.isCompoundOperandIsolated(compoundId, source.id),
+    () => store.isCompoundOperandIsolated(compoundId, source.id)
+  )
   const isCompound = source.type === 'path' && !!source.boolean
   const hasChildren = isCompound && (source.boolean?.operands.length ?? 0) > 0
 
@@ -107,11 +112,18 @@ const BooleanOperandRow = memo(function BooleanOperandRow({
         <button
           className="layer-select"
           disabled={compoundLocked || !compoundVisible}
-          title={`Select ${source.name} operand in compound`}
+          title={`Select ${source.name} operand in compound · Double-click to isolate for editing`}
           onClick={() => {
             store.select([compoundId])
             store.setSelectedCompoundOperand({ compoundId, operandId: source.id })
             store.highlightBooleanSource(source.id)
+          }}
+          onDoubleClick={e => {
+            e.stopPropagation()
+            e.preventDefault()
+            store.select([compoundId])
+            store.setSelectedCompoundOperand({ compoundId, operandId: source.id })
+            store.setPathEditingTarget({ id: compoundId, operandId: source.id })
           }}
         >
           <SourceIcon size={12} />
@@ -129,6 +141,7 @@ const BooleanOperandRow = memo(function BooleanOperandRow({
           >
             {isCompound ? `⊞ ${source.boolean!.operation.toUpperCase()}` : badgeText}
           </span>
+          {isIsolated && <span className="boolean-layer-badge is-isolated-badge" data-testid="boolean-operand-editing-badge">ISOLATED</span>}
           {muted && <span className="boolean-layer-badge is-muted-badge">MUTED</span>}
         </button>
         <button

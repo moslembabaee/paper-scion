@@ -70,6 +70,26 @@ function worldToOperandLocal(operand: VectorElement, world: Point, parentMatrix:
   }
 }
 
+function CombineIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect width="8" height="8" x="2" y="2" rx="2" />
+      <path d="M14 2c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2" />
+      <path d="M20 2c1.1 0 2 .9 2 2v4c0 1.1-.9 2-2 2" />
+      <rect width="8" height="8" x="14" y="14" rx="2" />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
+  )
+}
+
 /** Draft geometry is transient. Pointer updates are coalesced to one animation frame. */
 export function PenOverlay({ store, controller, editingId, operandId, penMode, onFinish }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -165,6 +185,40 @@ export function PenOverlay({ store, controller, editingId, operandId, penMode, o
       curveMode: a.curveMode,
     })),
   }))
+
+  const siblingGhostPaths: { id: string; d: string }[] = []
+  if (operand && node?.type === 'path' && node.boolean) {
+    for (const sib of node.boolean.operands) {
+      if (sib.id === operand.id) continue
+      try {
+        const contours = vectorToContours(sib)
+        const ghostContours = contours.map(c => ({
+          ...c,
+          anchors: c.anchors.map(a => {
+            const worldPt = operandLocalToWorld(sib, a, parentMatrix)
+            const screenPt = { x: worldPt.x * camera.zoom + camera.x, y: worldPt.y * camera.zoom + camera.y }
+            const inPt = a.in ? (() => {
+              const w = operandLocalToWorld(sib, a.in, parentMatrix)
+              return { x: w.x * camera.zoom + camera.x, y: w.y * camera.zoom + camera.y }
+            })() : undefined
+            const outPt = a.out ? (() => {
+              const w = operandLocalToWorld(sib, a.out, parentMatrix)
+              return { x: w.x * camera.zoom + camera.x, y: w.y * camera.zoom + camera.y }
+            })() : undefined
+            return {
+              ...screenPt,
+              ...(inPt ? { in: inPt } : {}),
+              ...(outPt ? { out: outPt } : {}),
+              curveMode: a.curveMode,
+            }
+          }),
+        }))
+        siblingGhostPaths.push({ id: sib.id, d: serializePath(ghostContours) })
+      } catch {
+        // ignore malformed sibling paths
+      }
+    }
+  }
 
   useLayoutEffect(() => {
     const root = rootRef.current!, viewport = root.closest<HTMLElement>('.canvas-viewport')!
@@ -804,7 +858,36 @@ export function PenOverlay({ store, controller, editingId, operandId, penMode, o
   const hasOpenContour = activeContour && !activeContour.closed && activeContour.anchors.length > 1
 
   return <div ref={rootRef} className={`pen-overlay ${penMode ? 'is-pen' : 'is-path-edit'} ${isBending ? 'is-bending-curve' : ''}`} data-testid="pen-overlay">
+    {operand && node?.type === 'path' && node.boolean && (
+      <div className="compound-isolation-topbar viewport-ui" data-testid="compound-isolation-topbar">
+        <span className="compound-isolation-topbar-title">
+          <CombineIcon />
+          <span>COMPOUND SUB-PATH ISOLATION</span>
+        </span>
+        <span className="compound-isolation-topbar-desc">
+          Editing <strong>{operand.name}</strong> sub-path in <em>{node.name}</em> ({node.boolean.operation.toUpperCase()})
+        </span>
+        <button
+          type="button"
+          className="compound-isolation-topbar-exit"
+          data-testid="compound-isolation-exit-btn"
+          title="Exit sub-path isolation mode (Esc or Enter)"
+          onClick={() => finishRef.current()}
+        >
+          <CloseIcon />
+          <span>Done (Esc)</span>
+        </button>
+      </div>
+    )}
     <svg className="pen-geometry" aria-label="Path anchors and Bézier handles">
+      {siblingGhostPaths.map(ghost => (
+        <path
+          key={ghost.id}
+          className="compound-ghost-operand"
+          data-testid={`compound-ghost-${ghost.id}`}
+          d={ghost.d}
+        />
+      ))}
       <path className="pen-preview" data-testid="pen-preview" d={preview} />
       {snapTarget && <g className="pen-snap-target" data-testid="pen-snap-target" transform={`translate(${snapTarget.x * camera.zoom + camera.x} ${snapTarget.y * camera.zoom + camera.y})`}><circle r="8" /><path d="M-12 0H-5M5 0H12M0-12V-5M0 5V12" /><text x="14" y="-12">{snapTarget.label}</text></g>}
       {hoverSegment && (

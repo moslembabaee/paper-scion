@@ -521,3 +521,97 @@ function sourcePathData(curves: readonly Curve[]): string {
 export function vectorPathData(node: VectorElement): string {
   return sourcePathData(shapeFor(node).curves)
 }
+
+/**
+ * Maps a point from the compound element's parent coordinate space into the
+ * internal viewBox/operand coordinate space, accounting for translation, scale,
+ * rotation, and viewBox offset.
+ */
+export function compoundParentToOperandLocal(compound: PathElement, parentPoint: Point): Point {
+  const [vx, vy, vw, vh] = compound.viewBox
+  if (vw <= 0 || vh <= 0 || compound.width <= 0 || compound.height <= 0) return parentPoint
+  const cx = compound.x + compound.width / 2
+  const cy = compound.y + compound.height / 2
+  const dx = parentPoint.x - cx
+  const dy = parentPoint.y - cy
+  const angle = -compound.rotation * Math.PI / 180
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+  const unrotX = cos * dx - sin * dy
+  const unrotY = sin * dx + cos * dy
+  const normX = unrotX + compound.width / 2
+  const normY = unrotY + compound.height / 2
+  const operandX = (normX / compound.width) * vw + vx
+  const operandY = (normY / compound.height) * vh + vy
+  return point(operandX, operandY)
+}
+
+/**
+ * Recursively locates the topmost leaf operand within a compound hierarchy
+ * containing the given point (expressed in compound internal operand coordinates).
+ */
+export function findCompoundOperandAtPoint(
+  compound: BooleanCompound,
+  operandPoint: Point
+): VectorElement | undefined {
+  const reversed = [...compound.operands].reverse()
+  for (const op of reversed) {
+    if (op.type === 'path' && op.boolean) {
+      const nestedHit = findCompoundOperandAtPoint(op.boolean, operandPoint)
+      if (nestedHit) return nestedHit
+      if (vectorContainsPoint(op, operandPoint)) return op
+    } else if (vectorContainsPoint(op, operandPoint)) {
+      return op
+    }
+  }
+  return undefined
+}
+
+export interface CompoundBreadcrumbItem {
+  readonly id: string
+  readonly name: string
+  readonly type: string
+  readonly operation?: BooleanOperation
+}
+
+/**
+ * Builds a breadcrumb hierarchy path from root compound down to the target operand.
+ */
+export function getCompoundBreadcrumbs(
+  compound: BooleanCompound,
+  targetOperandId: string,
+  rootName = 'Compound'
+): readonly CompoundBreadcrumbItem[] {
+  const path: CompoundBreadcrumbItem[] = []
+
+  function search(currentCompound: BooleanCompound, currentName: string): boolean {
+    path.push({
+      id: currentCompound.operation,
+      name: currentName,
+      type: 'compound',
+      operation: currentCompound.operation,
+    })
+
+    for (const op of currentCompound.operands) {
+      if (op.id === targetOperandId) {
+        path.push({
+          id: op.id,
+          name: op.name,
+          type: op.type,
+          ...(op.type === 'path' && op.boolean ? { operation: op.boolean.operation } : {}),
+        })
+        return true
+      }
+      if (op.type === 'path' && op.boolean) {
+        if (search(op.boolean, op.name)) return true
+      }
+    }
+
+    path.pop()
+    return false
+  }
+
+  search(compound, rootName)
+  return path
+}
+

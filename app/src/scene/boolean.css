@@ -125,6 +125,87 @@
 .boolean-footer button:disabled { opacity: .4; cursor: default; }
 .boolean-section .boolean-error { margin: 10px 0 0; color: var(--paper-text); border-left: 2px solid var(--paper-accent); padding-left: 8px; font-size: 10px; line-height: 1.6; }
 
+/* ─── On-Canvas Compound Sub-Path Isolation Overlay & HUD ─────────────────── */
+.compound-isolation-topbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--paper-bg, #080808);
+  border: 1px solid var(--paper-accent, #81adec);
+  border-radius: 6px;
+  padding: 6px 14px;
+  color: var(--paper-text, #edebe1);
+  font-size: 11px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(129, 173, 236, 0.25);
+  pointer-events: auto;
+  z-index: 100;
+}
+
+.compound-isolation-topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--paper-accent, #81adec);
+  font: 10px var(--font-mono, monospace);
+  letter-spacing: 0.05em;
+}
+
+.compound-isolation-topbar-desc {
+  color: var(--paper-text-muted, #777777);
+  font-size: 10px;
+}
+
+.compound-isolation-topbar-desc strong {
+  color: var(--paper-text, #edebe1);
+  font-weight: 500;
+}
+
+.compound-isolation-topbar-desc em {
+  color: var(--paper-accent-text, #81adec);
+  font-style: normal;
+}
+
+.compound-isolation-topbar-exit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--paper-accent-soft, rgba(129, 173, 236, 0.16));
+  border: 1px solid var(--paper-accent, #81adec);
+  border-radius: 4px;
+  color: var(--paper-accent, #81adec);
+  font: 9px var(--font-mono, monospace);
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.compound-isolation-topbar-exit:hover {
+  background: var(--paper-accent, #81adec);
+  color: #080808;
+}
+
+.compound-ghost-operand {
+  fill: none;
+  stroke: var(--paper-accent, #81adec);
+  stroke-width: 1.2px;
+  stroke-dasharray: 4 4;
+  opacity: 0.45;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.boolean-layer-badge.is-isolated-badge {
+  background: var(--paper-accent, #81adec);
+  color: var(--paper-on-accent, #080808);
+  border-color: transparent;
+  font-weight: 600;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .boolean-toolbar button, .cag-tab-btn, .boolean-footer button { transition: none; }
 }

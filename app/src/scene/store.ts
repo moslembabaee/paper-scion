@@ -95,6 +95,16 @@ export class SceneStore {
     for (const listener of [...this.pathEditingTargetListeners]) listener()
   }
 
+  isCompoundOperandIsolated = (compoundId: string, operandId: string): boolean => {
+    return this.pathEditingTarget?.id === compoundId && this.pathEditingTarget?.operandId === operandId
+  }
+
+  exitCompoundIsolation = (): void => {
+    if (this.pathEditingTarget) {
+      this.setPathEditingTarget(null)
+    }
+  }
+
   getSelectedCompoundOperand = (): { compoundId: string; operandId: string } | null => this.selectedCompoundOperand
 
   setSelectedCompoundOperand(target: { compoundId: string; operandId: string } | null): void {

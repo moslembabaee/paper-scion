@@ -1023,7 +1023,8 @@ export function BooleanBar({ store }: { store: SceneStore }) {
             </button>
             <button
               disabled={disabled}
-              title="Replace this compound with its merged vector outline"
+              data-testid="boolean-flatten-btn"
+              title="Replace this compound with its merged vector outline (⌘E)"
               onClick={() => run(() => store.flattenBoolean(compound.id))}
             >
               Flatten path

@@ -84,6 +84,17 @@ export function useArrangeShortcuts(store: SceneStore, controller: ViewportContr
           return
         }
       }
+      if (command && (key === 'KeyE' || event.key === 'e' || event.key === 'E') && !event.altKey && !event.shiftKey) {
+        const selection = store.getSnapshot().selection
+        if (selection.length === 1) {
+          const node = store.getSnapshot().elements[selection[0]]
+          if (node?.type === 'path' && node.boolean && !store.isLocked(node.id)) {
+            event.preventDefault(); finish()
+            store.flattenBoolean(node.id)
+            return
+          }
+        }
+      }
       if ((event.key === 'Delete' || event.key === 'Backspace') && !event.altKey && !command) {
         if (store.getSnapshot().selection.length > 0) {
           event.preventDefault(); finish()
