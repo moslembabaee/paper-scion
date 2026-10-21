@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import {
   AlignLeft,
@@ -28,11 +28,14 @@ import type {
 import { isVector } from './booleanGeometry.ts'
 import {
   OPENTYPE_CATALOG,
+  OPENTYPE_RECIPES,
+  PRIMARY_OPENTYPE_TAGS,
   VARIABLE_AXES_META,
   VARIABLE_AXIS_PRESETS,
   compileTypographyStyles,
   compileFontFeatureSettings,
   compileFontVariationSettings,
+  computeTextOpticalMetrics,
   generatePathPreset,
   textPathOffset,
 } from './typography.ts'
@@ -87,6 +90,8 @@ export function TypographyStudio({ store, node, binding }: TypographyStudioProps
   const [showExtendedAxes, setShowExtendedAxes] = useState(false)
   const [newAxisTag, setNewAxisTag] = useState('')
   const [newAxisVal, setNewAxisVal] = useState(0)
+
+  const opticalMetrics = useMemo(() => computeTextOpticalMetrics(node), [node])
 
   const isInstance = node.component?.kind === 'instance'
   const masterId = isInstance ? node.component.masterId : undefined
@@ -806,37 +811,98 @@ export function TypographyStudio({ store, node, binding }: TypographyStudioProps
             </button>
           </div>
 
-          {/* Feature Grid */}
-          <div className="opentype-grid" role="group" aria-label="OpenType Feature Toggles">
-            {OPENTYPE_CATALOG.map(feat => {
-              const active = otFeatures[feat.tag] ?? false
-              return (
-                <div
-                  key={feat.tag}
-                  className={`opentype-toggle-card ${active ? 'is-active' : ''}`}
-                  onClick={() => toggleOtFeature(feat.tag)}
-                  title={`${feat.name}: ${feat.description}`}
-                  role="checkbox"
-                  aria-checked={active}
-                  tabIndex={0}
-                  onKeyDown={event => {
-                    if (event.key === ' ' || event.key === 'Enter') {
-                      event.preventDefault()
-                      toggleOtFeature(feat.tag)
-                    }
-                  }}
-                >
-                  <div className="opentype-toggle-left">
-                    <span className="opentype-tag">{feat.tag}</span>
-                    <span className="opentype-name">{feat.name}</span>
-                    <span className="opentype-sample">{feat.sample}</span>
+          {/* Quick Recipes Toolbar */}
+          <div className="typo-chips-scroll" role="toolbar" aria-label="OpenType Recipes">
+            {OPENTYPE_RECIPES.map(recipe => (
+              <button
+                key={recipe.id}
+                type="button"
+                className="typo-chip"
+                onClick={() => update({ openTypeFeatures: { ...recipe.features } })}
+                title={recipe.description}
+              >
+                {recipe.name}
+              </button>
+            ))}
+          </div>
+
+          {/* Primary OpenType Features: liga, calt, frac, tnum */}
+          <div className="core-opentype-section">
+            <span className="opentype-section-title">Essential Typography Features</span>
+            <div className="opentype-grid" role="group" aria-label="Essential OpenType Features">
+              {[
+                { tag: 'liga', name: 'Standard Ligatures', sample: 'fi fl ffi', desc: 'Combines adjacent glyphs to prevent collisions' },
+                { tag: 'calt', name: 'Contextual Alternates', sample: '-> => !=', desc: 'Context-sensitive programming arrows & glyph connections' },
+                { tag: 'frac', name: 'Fractions', sample: '1/2 3/4 7/8', desc: 'Converts numbers into true diagonal fractions' },
+                { tag: 'tnum', name: 'Tabular Figures', sample: '$1,420.00', desc: 'Uniform digit widths for aligned numerical tables' },
+              ].map(feat => {
+                const active = otFeatures[feat.tag] ?? (feat.tag === 'liga' ? true : false)
+                return (
+                  <div
+                    key={feat.tag}
+                    className={`opentype-toggle-card ${active ? 'is-active' : ''}`}
+                    onClick={() => toggleOtFeature(feat.tag)}
+                    title={`${feat.name}: ${feat.desc}`}
+                    role="checkbox"
+                    aria-checked={active}
+                    tabIndex={0}
+                    data-testid={`ot-feature-${feat.tag}`}
+                    onKeyDown={event => {
+                      if (event.key === ' ' || event.key === 'Enter') {
+                        event.preventDefault()
+                        toggleOtFeature(feat.tag)
+                      }
+                    }}
+                  >
+                    <div className="opentype-toggle-left">
+                      <span className="opentype-tag">{feat.tag}</span>
+                      <span className="opentype-name">{feat.name}</span>
+                      <span className="opentype-sample">{feat.sample}</span>
+                    </div>
+                    <div className="opentype-switch">
+                      {active && <Check size={10} />}
+                    </div>
                   </div>
-                  <div className="opentype-switch">
-                    {active && <Check size={10} />}
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Extended Feature Catalog */}
+          <div className="core-opentype-section" style={{ marginTop: 4 }}>
+            <span className="opentype-section-title">Extended Catalog</span>
+            <div className="opentype-grid" role="group" aria-label="Extended OpenType Feature Toggles">
+              {OPENTYPE_CATALOG.filter(f => !PRIMARY_OPENTYPE_TAGS.includes(f.tag as typeof PRIMARY_OPENTYPE_TAGS[number])).map(feat => {
+                const active = otFeatures[feat.tag] ?? false
+                return (
+                  <div
+                    key={feat.tag}
+                    className={`opentype-toggle-card ${active ? 'is-active' : ''}`}
+                    onClick={() => toggleOtFeature(feat.tag)}
+                    title={`${feat.name}: ${feat.description}`}
+                    role="checkbox"
+                    aria-checked={active}
+                    tabIndex={0}
+                    data-testid={`ot-feature-${feat.tag}`}
+                    onKeyDown={event => {
+                      if (event.key === ' ' || event.key === 'Enter') {
+                        event.preventDefault()
+                        toggleOtFeature(feat.tag)
+                      }
+                    }}
+                  >
+                    <div className="opentype-toggle-left">
+                      <span className="opentype-tag">{feat.tag}</span>
+                      <span className="opentype-name">{feat.name}</span>
+                      <span className="opentype-sample">{feat.sample}</span>
+                    </div>
+                    <div className="opentype-switch">
+                      {active && <Check size={10} />}
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
 
           {/* Interactive OpenType Preview Sandbox */}
@@ -918,6 +984,80 @@ export function TypographyStudio({ store, node, binding }: TypographyStudioProps
                 value={node.letterSpacing}
                 onChange={event => update({ letterSpacing: event.currentTarget.valueAsNumber })}
               />
+            </div>
+          </div>
+
+          {/* On-Canvas Optical Guides Toggle */}
+          <div className="setting-row">
+            <span>On-canvas optical metrics guides</span>
+            <button
+              type="button"
+              className={`grid-switch ${node.showOpticalMetrics ? 'on' : ''}`}
+              role="switch"
+              aria-checked={Boolean(node.showOpticalMetrics)}
+              aria-label="Toggle on-canvas optical metrics guides"
+              onClick={() => update({ showOpticalMetrics: !node.showOpticalMetrics })}
+            >
+              <span />
+            </button>
+          </div>
+
+          {/* Optical Margin Alignment Toggle */}
+          <div className="setting-row">
+            <span>Optical margin alignment</span>
+            <button
+              type="button"
+              className={`grid-switch ${node.opticalMarginAlignment ? 'on' : ''}`}
+              role="switch"
+              aria-checked={Boolean(node.opticalMarginAlignment)}
+              aria-label="Toggle optical margin alignment"
+              onClick={() => update({ opticalMarginAlignment: !node.opticalMarginAlignment })}
+            >
+              <span />
+            </button>
+          </div>
+
+          {/* Glyph-Level Optical Metrics HUD Card */}
+          <div className="optical-metrics-hud" data-testid="optical-metrics-hud">
+            <div className="optical-hud-header">
+              <span className="optical-hud-title">Glyph Optical Metrics</span>
+              <span className="axis-tag-badge">{opticalMetrics.characterCount} Chars · {opticalMetrics.glyphCount} Glyphs</span>
+            </div>
+            <div className="optical-hud-grid">
+              <div className="optical-hud-cell" title="Cap Height: height of flat capital letters">
+                <span className="optical-hud-label">Cap H</span>
+                <span className="optical-hud-val">{opticalMetrics.capHeight}px</span>
+              </div>
+              <div className="optical-hud-cell" title="X-Height: height of lowercase letter x">
+                <span className="optical-hud-label">x-H</span>
+                <span className="optical-hud-val">{opticalMetrics.xHeight}px</span>
+              </div>
+              <div className="optical-hud-cell" title="Baseline: baseline coordinate">
+                <span className="optical-hud-label">Base</span>
+                <span className="optical-hud-val">{opticalMetrics.baseline}px</span>
+              </div>
+              <div className="optical-hud-cell" title="Descent: descender depth">
+                <span className="optical-hud-label">Desc</span>
+                <span className="optical-hud-val">{opticalMetrics.descent}px</span>
+              </div>
+            </div>
+            <div className="optical-hud-grid">
+              <div className="optical-hud-cell" title="Kerning Pairs count">
+                <span className="optical-hud-label">Pairs</span>
+                <span className="optical-hud-val">{opticalMetrics.kerningPairCount}</span>
+              </div>
+              <div className="optical-hud-cell" title="Average optical kerning adjustment">
+                <span className="optical-hud-label">Avg Kern</span>
+                <span className="optical-hud-val">{opticalMetrics.averageKerningDelta}px</span>
+              </div>
+              <div className="optical-hud-cell" title="Width stretch percentage">
+                <span className="optical-hud-label">Width</span>
+                <span className="optical-hud-val">{(opticalMetrics.widthStretchRatio * 100).toFixed(0)}%</span>
+              </div>
+              <div className="optical-hud-cell" title="Slant angle in degrees">
+                <span className="optical-hud-label">Slant</span>
+                <span className="optical-hud-val">{opticalMetrics.slantAngle}°</span>
+              </div>
             </div>
           </div>
 

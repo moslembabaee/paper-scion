@@ -471,6 +471,7 @@ export function exportVariableFontCSS(
     ...(node.variableAxes ?? {}),
   }
   const fvs = compileFontVariationSettings(axes, node.fontWeight) ?? ''
+  const ffs = compileFontFeatureSettings(node.openTypeFeatures)
 
   switch (format) {
     case 'css': {
@@ -480,6 +481,9 @@ export function exportVariableFontCSS(
         `  font-variation-settings: ${fvs};`,
         `  font-weight: ${axes.wght ?? node.fontWeight};`,
       ]
+      if (ffs) {
+        decls.push(`  font-feature-settings: ${ffs};`)
+      }
       if (axes.wdth && axes.wdth !== 100) {
         decls.push(`  font-stretch: ${axes.wdth}%;`)
       }
@@ -509,6 +513,9 @@ export function exportVariableFontCSS(
         `[font-variation-settings:'${fvs}']`,
         `font-[${axes.wght ?? node.fontWeight}]`,
       ]
+      if (ffs) {
+        parts.push(`[font-feature-settings:'${ffs.replace(/"/g, '')}']`)
+      }
       if (axes.wdth && axes.wdth !== 100) {
         parts.push(`[font-stretch:${axes.wdth}%]`)
       }
@@ -530,6 +537,9 @@ export function exportVariableFontCSS(
         fontSize: node.fontSize,
         fontVariationSettings: fvs,
         fontWeight: axes.wght ?? node.fontWeight,
+      }
+      if (ffs) {
+        styleObj.fontFeatureSettings = ffs
       }
       if (axes.wdth && axes.wdth !== 100) {
         styleObj.fontStretch = `${axes.wdth}%`
@@ -564,15 +574,20 @@ export function exportVariableFontCSS(
   }
 }
 
+export const PRIMARY_OPENTYPE_TAGS = ['liga', 'calt', 'frac', 'tnum'] as const
+
 /** Compile CSS font-feature-settings string */
 export function compileFontFeatureSettings(features?: OpenTypeFeatures): string | undefined {
   if (!features) return undefined
   const parts: string[] = []
   for (const [tag, active] of Object.entries(features)) {
+    if (typeof active !== 'boolean') continue
+    const cleanTag = tag.trim()
+    if (!/^[a-zA-Z0-9]{4}$/.test(cleanTag)) continue
     if (active === true) {
-      parts.push(`"${tag}" 1`)
+      parts.push(`"${cleanTag}" 1`)
     } else if (active === false) {
-      parts.push(`"${tag}" 0`)
+      parts.push(`"${cleanTag}" 0`)
     }
   }
   return parts.length ? parts.join(', ') : undefined
@@ -810,6 +825,7 @@ export function embeddedFontCSS(node: TextElement): string {
 export {
   calculatePairwiseKerning,
   computeTextOpticalMetrics,
+  getOpticalBounds,
   type GlyphOpticalMetric,
   type LineOpticalMetrics,
   type TextOpticalMetrics,

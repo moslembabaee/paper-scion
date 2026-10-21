@@ -15,6 +15,7 @@ export interface GlyphOpticalMetric {
   readonly overhangLeft: number // optical margin left overhang in px
   readonly overhangRight: number // optical margin right overhang in px
   readonly isWhitespace: boolean
+  readonly slantAngle?: number
 }
 
 export interface LineOpticalMetrics {
@@ -23,6 +24,7 @@ export interface LineOpticalMetrics {
   readonly glyphs: readonly GlyphOpticalMetric[]
   readonly width: number
   readonly height: number
+  readonly lineOffset?: number // alignment horizontal offset in px
   readonly baseline: number // y coordinate of baseline in px
   readonly capHeight: number // y coordinate of cap height in px
   readonly xHeight: number // y coordinate of x-height in px
@@ -233,15 +235,31 @@ export function computeTextOpticalMetrics(node: TextElement): TextOpticalMetrics
     const lineWidth = Math.max(cursorX, 0)
     if (lineWidth > maxLineWidth) maxLineWidth = lineWidth
 
-    const opticalMarginLeft = glyphs.length > 0 ? glyphs[0].overhangLeft : 0
-    const opticalMarginRight = glyphs.length > 0 ? glyphs[glyphs.length - 1].overhangRight : 0
+    const lineOffset = node.textAlign === 'center'
+      ? Math.max(0, (node.width - lineWidth) / 2)
+      : node.textAlign === 'right'
+        ? Math.max(0, node.width - lineWidth)
+        : 0
+
+    // Adjust glyph positions with alignment offset
+    const alignedGlyphs: GlyphOpticalMetric[] = lineOffset === 0
+      ? glyphs.map(g => ({ ...g, slantAngle: node.variableAxes?.slnt ?? 0 }))
+      : glyphs.map(g => ({
+          ...g,
+          x: Number((g.x + lineOffset).toFixed(2)),
+          slantAngle: node.variableAxes?.slnt ?? 0,
+        }))
+
+    const opticalMarginLeft = alignedGlyphs.length > 0 ? alignedGlyphs[0].overhangLeft : 0
+    const opticalMarginRight = alignedGlyphs.length > 0 ? alignedGlyphs[alignedGlyphs.length - 1].overhangRight : 0
 
     lines.push({
       lineIndex: l,
       text: lineText,
-      glyphs,
+      glyphs: alignedGlyphs,
       width: Number(lineWidth.toFixed(2)),
       height: Number(lineSpacingPx.toFixed(2)),
+      lineOffset: Number(lineOffset.toFixed(2)),
       baseline: Number(baselineY.toFixed(2)),
       capHeight: Number(capHeightY.toFixed(2)),
       xHeight: Number(xHeightY.toFixed(2)),
@@ -279,5 +297,38 @@ export function computeTextOpticalMetrics(node: TextElement): TextOpticalMetrics
     opticalSize: node.variableAxes?.opsz ?? fontSize,
     effectiveLineHeightPx: Number(lineSpacingPx.toFixed(2)),
     effectiveTrackingEm: Number((trackingPx / fontSize).toFixed(4)),
+  }
+}
+
+/** Compute overall bounding box of glyph optical metrics */
+export function getOpticalBounds(metrics: TextOpticalMetrics): { x: number; y: number; width: number; height: number } {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+
+  for (const line of metrics.lines) {
+    for (const glyph of line.glyphs) {
+      if (glyph.isWhitespace) continue
+      const gx = glyph.x + glyph.leftSideBearing
+      const gy = glyph.y
+      const gw = glyph.width
+      const gh = glyph.height
+      if (gx < minX) minX = gx
+      if (gy < minY) minY = gy
+      if (gx + gw > maxX) maxX = gx + gw
+      if (gy + gh > maxY) maxY = gy + gh
+    }
+  }
+
+  if (!Number.isFinite(minX)) {
+    return { x: 0, y: 0, width: metrics.totalWidth, height: metrics.totalHeight }
+  }
+
+  return {
+    x: Number(minX.toFixed(2)),
+    y: Number(minY.toFixed(2)),
+    width: Number(Math.max(0, maxX - minX).toFixed(2)),
+    height: Number(Math.max(0, maxY - minY).toFixed(2)),
   }
 }

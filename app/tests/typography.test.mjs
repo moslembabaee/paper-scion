@@ -4,7 +4,24 @@ import ts from 'typescript'
 import { SceneStore } from '../src/scene/store.ts'
 import { parsePath } from '../src/scene/pathGeometry.ts'
 import { getWorldMatrix } from '../src/scene/geometry.ts'
-import { compileFontVariationSettings, compileTypographyStyles, resolveTextPathD, reversePathD, textAnchorForPath, textPathOffset } from '../src/scene/typography.ts'
+import {
+  compileFontVariationSettings,
+  compileFontFeatureSettings,
+  compileTypographyStyles,
+  exportVariableFontCSS,
+  clampAxisValue,
+  getAxisMeta,
+  interpolateVariableAxes,
+  PRIMARY_OPENTYPE_TAGS,
+  OPENTYPE_RECIPES,
+  computeTextOpticalMetrics,
+  getOpticalBounds,
+  calculatePairwiseKerning,
+  resolveTextPathD,
+  reversePathD,
+  textAnchorForPath,
+  textPathOffset,
+} from '../src/scene/typography.ts'
 import { sceneToSVG, exportBounds } from '../src/io/svg.ts'
 import { buildCSSProps, buildReactComponent } from '../src/tokens/codegen.ts'
 import { updateTextCurve } from '../src/scene/textPathEditing.ts'
@@ -177,4 +194,215 @@ test('editing a linked baseline preserves placement and updates all followers, r
   assert.equal(updateTextCurve(store, 'text', 'M0 0 L100 100'), false)
   assert.equal(store.getSnapshot(), locked)
   assert.equal(updateTextCurve(store, 'missing', 'M0 0 L100 100'), false)
+})
+
+test('variable font axis sliders (wght, wdth, slnt, opsz) compile, clamp, interpolate and export', () => {
+  // Clamping
+  assert.equal(clampAxisValue('wght', 1500), 1000)
+  assert.equal(clampAxisValue('wght', -10), 1)
+  assert.equal(clampAxisValue('wdth', 300), 200)
+  assert.equal(clampAxisValue('wdth', 5), 25)
+  assert.equal(clampAxisValue('slnt', -120), -90)
+  assert.equal(clampAxisValue('slnt', 120), 90)
+  assert.equal(clampAxisValue('opsz', 200), 144)
+  assert.equal(clampAxisValue('opsz', 2), 6)
+
+  // Meta lookup
+  const wghtMeta = getAxisMeta('wght')
+  assert.equal(wghtMeta.tag, 'wght')
+  assert.equal(wghtMeta.min, 1)
+  assert.equal(wghtMeta.max, 1000)
+
+  const customMeta = getAxisMeta('ABCD')
+  assert.equal(customMeta.tag, 'ABCD')
+  assert.equal(customMeta.min, 0)
+  assert.equal(customMeta.max, 1000)
+
+  // Interpolation
+  const fromAxes = { wght: 300, wdth: 80, slnt: 0, opsz: 14 }
+  const toAxes = { wght: 700, wdth: 120, slnt: -10, opsz: 32 }
+  const midAxes = interpolateVariableAxes(fromAxes, toAxes, 0.5)
+  assert.equal(midAxes.wght, 500)
+  assert.equal(midAxes.wdth, 100)
+  assert.equal(midAxes.slnt, -5)
+  assert.equal(midAxes.opsz, 23)
+
+  // Typography styles compilation
+  const store = textScene()
+  const baseNode = getText(store)
+  const node = {
+    ...baseNode,
+    fontWeight: 600,
+    variableAxes: { wght: 650, wdth: 125, slnt: -14, opsz: 28 },
+    openTypeFeatures: { liga: true, calt: true },
+  }
+  const styles = compileTypographyStyles(node)
+  assert.equal(styles.fontWeight, 650)
+  assert.equal(styles.fontStretch, '125%')
+  assert.equal(styles.fontStyle, 'oblique -14deg')
+  assert.equal(styles.fontOpticalSizing, 'none')
+  assert.match(styles.fontVariationSettings, /'wght' 650/)
+  assert.match(styles.fontVariationSettings, /'wdth' 125/)
+  assert.match(styles.fontVariationSettings, /'slnt' -14/)
+  assert.match(styles.fontVariationSettings, /'opsz' 28/)
+
+  // Export to CSS
+  const css = exportVariableFontCSS(node, { format: 'css' })
+  assert.match(css, /font-variation-settings: 'wght' 650, 'wdth' 125, 'slnt' -14, 'opsz' 28/)
+  assert.match(css, /font-stretch: 125%/)
+  assert.match(css, /font-style: oblique -14deg/)
+  assert.match(css, /font-feature-settings: "liga" 1, "calt" 1/)
+
+  // Export to React
+  const reactCode = exportVariableFontCSS(node, { format: 'react' })
+  assert.match(reactCode, /"fontStretch": "125%"/)
+  assert.match(reactCode, /"fontStyle": "oblique -14deg"/)
+  assert.match(reactCode, /"fontFeatureSettings": "\\"liga\\" 1, \\"calt\\" 1"/)
+})
+
+test('OpenType feature flag toggles (liga, calt, frac, tnum) generate valid CSS and recipes', () => {
+  // Primary features list
+  assert.deepEqual(PRIMARY_OPENTYPE_TAGS, ['liga', 'calt', 'frac', 'tnum'])
+
+  // Feature settings compilation
+  const allOn = compileFontFeatureSettings({ liga: true, calt: true, frac: true, tnum: true })
+  assert.match(allOn, /"liga" 1/)
+  assert.match(allOn, /"calt" 1/)
+  assert.match(allOn, /"frac" 1/)
+  assert.match(allOn, /"tnum" 1/)
+
+  const disabled = compileFontFeatureSettings({ liga: false, calt: false })
+  assert.match(disabled, /"liga" 0/)
+  assert.match(disabled, /"calt" 0/)
+
+  // Filtering invalid tags
+  const sanitized = compileFontFeatureSettings({ liga: true, 'invalid-tag-length': true, '123;drop': true })
+  assert.equal(sanitized, '"liga" 1')
+
+  // CSS variant mapping
+  const store = textScene()
+  const baseNode = getText(store)
+  const node = {
+    ...baseNode,
+    openTypeFeatures: { liga: true, calt: true, frac: true, tnum: true },
+  }
+  const styles = compileTypographyStyles(node)
+  assert.match(styles.fontVariantNumeric, /tabular-nums/)
+  assert.match(styles.fontVariantNumeric, /diagonal-fractions/)
+  assert.match(styles.fontVariantLigatures, /common-ligatures/)
+  assert.match(styles.fontVariantLigatures, /contextual/)
+
+  // OpenType Recipes verification
+  const tabularRecipe = OPENTYPE_RECIPES.find(r => r.id === 'tabular-data')
+  assert.ok(tabularRecipe)
+  assert.equal(tabularRecipe.features.tnum, true)
+  assert.equal(tabularRecipe.features.frac, true)
+  assert.equal(tabularRecipe.features.zero, true)
+
+  const defaultRecipe = OPENTYPE_RECIPES.find(r => r.id === 'default')
+  assert.ok(defaultRecipe)
+  assert.equal(defaultRecipe.features.liga, true)
+  assert.equal(defaultRecipe.features.calt, true)
+})
+
+test('glyph-level optical metrics calculate bounds, alignment offsets, tabular digits and pairwise kerning', () => {
+  const store = textScene()
+  const baseNode = getText(store)
+
+  // Standard metrics
+  const textElement = {
+    ...baseNode,
+    text: 'AV 1234',
+    width: 400,
+    fontSize: 24,
+    lineHeight: 1.5,
+    variableAxes: { wght: 500, wdth: 100, slnt: -10, opsz: 24 },
+    openTypeFeatures: { tnum: true },
+    fontKerning: 'optical',
+    opticalKerning: 10,
+    textAlign: 'left',
+  }
+  const metrics = computeTextOpticalMetrics(textElement)
+  assert.equal(metrics.lineCount, 1)
+  assert.equal(metrics.characterCount, 7)
+  assert.equal(metrics.slantAngle, -10)
+  assert.equal(metrics.opticalSize, 24)
+  assert.ok(metrics.capHeight > 0)
+  assert.ok(metrics.xHeight > 0)
+  assert.ok(metrics.baseline > 0)
+  assert.ok(metrics.descent > 0)
+
+  // Pairwise kerning detected for 'AV'
+  assert.ok(metrics.kerningPairCount >= 1)
+  const avKerning = calculatePairwiseKerning('A', 'V', 10, 24)
+  assert.ok(avKerning < 0, 'AV pair should have negative kerning delta')
+
+  // Text alignment offsets: left vs center vs right
+  const leftMetrics = computeTextOpticalMetrics({ ...textElement, textAlign: 'left' })
+  assert.equal(leftMetrics.lines[0].lineOffset, 0)
+  assert.equal(leftMetrics.lines[0].glyphs[0].x, 0)
+
+  const centerMetrics = computeTextOpticalMetrics({ ...textElement, textAlign: 'center' })
+  const expectedCenterOffset = Math.max(0, (400 - centerMetrics.lines[0].width) / 2)
+  assert.equal(centerMetrics.lines[0].lineOffset, Number(expectedCenterOffset.toFixed(2)))
+  assert.equal(centerMetrics.lines[0].glyphs[0].x, Number(expectedCenterOffset.toFixed(2)))
+
+  const rightMetrics = computeTextOpticalMetrics({ ...textElement, textAlign: 'right' })
+  const expectedRightOffset = Math.max(0, 400 - rightMetrics.lines[0].width)
+  assert.equal(rightMetrics.lines[0].lineOffset, Number(expectedRightOffset.toFixed(2)))
+  assert.equal(rightMetrics.lines[0].glyphs[0].x, Number(expectedRightOffset.toFixed(2)))
+
+  // Optical bounds
+  const bounds = getOpticalBounds(leftMetrics)
+  assert.ok(bounds.width > 0)
+  assert.ok(bounds.height > 0)
+  assert.ok(bounds.y >= 0)
+})
+
+test('store updates, history, undo/redo, and serialization preserve variable axes, OpenType features, and optical metrics', () => {
+  const store = textScene()
+  const axes = { wght: 750, wdth: 120, slnt: -8, opsz: 36 }
+  const features = { liga: true, calt: true, frac: true, tnum: true }
+
+  store.update('text', 'text', {
+    variableAxes: axes,
+    openTypeFeatures: features,
+    showOpticalMetrics: true,
+    opticalMarginAlignment: true,
+  })
+
+  const state1 = store.getSnapshot().elements.text
+  assert.deepEqual(state1.variableAxes, axes)
+  assert.deepEqual(state1.openTypeFeatures, features)
+  assert.equal(state1.showOpticalMetrics, true)
+  assert.equal(state1.opticalMarginAlignment, true)
+
+  // Verify immutability: mutating local object does not mutate store state
+  axes.wght = 100
+  features.liga = false
+  assert.equal(store.getSnapshot().elements.text.variableAxes.wght, 750)
+  assert.equal(store.getSnapshot().elements.text.openTypeFeatures.liga, true)
+
+  // Serialization roundtrip
+  const restored = new SceneStore()
+  restored.load(JSON.parse(JSON.stringify(store.toJSON())))
+  const restoredText = restored.getSnapshot().elements.text
+  assert.deepEqual(restoredText.variableAxes, { wght: 750, wdth: 120, slnt: -8, opsz: 36 })
+  assert.deepEqual(restoredText.openTypeFeatures, { liga: true, calt: true, frac: true, tnum: true })
+  assert.equal(restoredText.showOpticalMetrics, true)
+  assert.equal(restoredText.opticalMarginAlignment, true)
+
+  // Undo / Redo
+  store.undo()
+  assert.equal(store.getSnapshot().elements.text.variableAxes, undefined)
+  assert.equal(store.getSnapshot().elements.text.showOpticalMetrics, undefined)
+
+  store.redo()
+  assert.equal(store.getSnapshot().elements.text.variableAxes.wght, 750)
+  assert.equal(store.getSnapshot().elements.text.showOpticalMetrics, true)
+
+  // Rejection of invalid variable axes and features
+  assert.throws(() => store.update('text', 'text', { variableAxes: { bad_tag_length: 500 } }))
+  assert.throws(() => store.update('text', 'text', { openTypeFeatures: { 'too_long': true } }))
+  assert.throws(() => store.update('text', 'text', { showOpticalMetrics: 'not_a_bool' }))
 })
