@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Paper Factory — control script.
+#
+# One place to inspect and operate the whole factory.
+#
+#   paper-factory status      # everything at a glance
+#   paper-factory doctor      # deep health check
+#   paper-factory restore     # reinstall harness configs + templates from git
+#   paper-factory watchdog    # run the watchdog once, now
+#   paper-factory watchdog-log
+#   paper-factory pipeline {start|stop|status|logs}
+#   paper-factory secrets     # list secret names (never values)
+#   paper-factory record      # print the full configuration record
+
+set -u
+
+PROJECT_DIR="${PROJECT_DIR:-/root/projects/paper-scion}"
+FACTORY_DIR="$PROJECT_DIR/.factory"
+STATE_DIR="${FACTORY_STATE_DIR:-/var/lib/paper-watchdog}"
+PIPELINE_LOG="$PROJECT_DIR/logs/pipeline.log"
+DEPLOY_LOG="$PROJECT_DIR/logs/deploy.log"
+
+case "${1:-status}" in
+
+status)
+  echo "=================================================="
+  echo "🏭 PAPER FACTORY STATUS"
+  echo "=================================================="
+  echo
+  echo "── Pipeline supervisor ──"
+  if pgrep -f "scion_pipeline.py" >/dev/null 2>&1; then
+    echo "  🟢 running (PID $(pgrep -f scion_pipeline.py | head -1))"
+  else
+    echo "  🔴 NOT running   →  paper-pipeline start"
+  fi
+  echo
+  echo "── Watchdog ──"
+  if systemctl is-active --quiet paper-watchdog.timer 2>/dev/null; then
+    next=$(systemctl show paper-watchdog.timer -p NextElapseUSecRealtime --value 2>/dev/null)
+    echo "  🟢 timer active   (next: $next)"
+  else
+    echo "  🔴 timer inactive  →  bash .factory/watchdog/install.sh"
+  fi
+  last=$(tail -n 1 "$STATE_DIR/watchdog.log" 2>/dev/null)
+  echo "  last run: ${last:-never}"
+  echo
+  echo "── Scion agents ──"
+  ( cd "$PROJECT_DIR" && scion list 2>/dev/null | tail -n +2 ) || echo "  (scion unavailable)"
+  echo
+  echo "── Containers ──"
+  docker ps -a --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -E "^(paper|hindsight)" || echo "  (none)"
+  echo
+  echo "── Endpoints ──"
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://paper.141.11.32.213.nip.io/healthz 2>/dev/null || echo "000")
+  [ "$code" = "200" ] && echo "  🟢 app      https://paper.141.11.32.213.nip.io" || echo "  🔴 app      HTTP $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8080/ 2>/dev/null || echo "000")
+  [ "$code" = "200" ] && echo "  🟢 scion    https://scion.141.11.32.213.nip.io" || echo "  🔴 scion    HTTP $code"
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8888/health 2>/dev/null || echo "000")
+  [ "$code" = "200" ] && echo "  🟢 memory   https://hindsight.141.11.32.213.nip.io" || echo "  🔴 memory   HTTP $code"
+  ;;
+
+doctor)
+  echo "── Deep health check ──"
+  echo
+  bash "$FACTORY_DIR/watchdog/detect.sh"
+  code=$?
+  echo
+  if [ "$code" -eq 0 ]; then
+    echo "✅ All checks passed."
+  else
+    echo "❌ Problems found:"
+    python3 -c "
+import json
+try: f=json.load(open('$STATE_DIR/findings.json'))
+except Exception: f=[]
+for x in f: print('   [%s] %s: %s' % (x['severity'], x['check'], x['message']))
+"
+    echo
+    echo "Run: paper-factory watchdog    (diagnose + remediate + notify)"
+  fi
+  ;;
+
+restore)
+  bash "$FACTORY_DIR/restore.sh" "${2:-}"
+  ;;
+
+watchdog)
+  bash "$FACTORY_DIR/watchdog/run.sh"
+  echo "── result ──"
+  cat "$STATE_DIR/findings.json" 2>/dev/null
+  [ -f "$STATE_DIR/diagnosis.md" ] && { echo; echo "── LLM diagnosis ──"; cat "$STATE_DIR/diagnosis.md"; }
+  ;;
+
+watchdog-log)
+  tail -f "$STATE_DIR/watchdog.log"
+  ;;
+
+pipeline)
+  shift
+  paper-pipeline "${1:-status}"
+  ;;
+
+secrets)
+  echo "── Scion Hub secrets (names only) ──"
+  ( cd "$PROJECT_DIR" && scion hub secret list --project=paper-scion 2>/dev/null | head -n 12 )
+  echo
+  echo "── Local secret files ──"
+  for f in /root/.factory-secrets/*; do
+    [ -f "$f" ] || continue
+    echo "  $(basename "$f")  ($(stat -c%s "$f") bytes, mode $(stat -c%a "$f"))"
+  done
+  ;;
+
+record)
+  cat "$FACTORY_DIR/README.md"
+  ;;
+
+*)
+  echo "Usage: paper-factory {status|doctor|restore|watchdog|watchdog-log|pipeline|secrets|record}"
+  exit 1
+  ;;
+esac

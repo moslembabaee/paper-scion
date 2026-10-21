@@ -1,0 +1,9 @@
+# Local factory state and secrets — never commit these.
+.factory/state/
+.factory/secrets/
+*.state.json
+
+# Watchdog runtime artifacts
+.factory/**/srvcheck/
+.factory/**/findings.json
+.factory/**/diagnosis.md
