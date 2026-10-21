@@ -2,7 +2,7 @@ import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'r
 import { ArrowDown, ArrowRight, ArrowUpRight, Combine, Diamond, Component as Diamonds, Layers, PenTool, Plus, RotateCcw, Sparkles, Unlink } from 'lucide-react'
 import type { ViewportController } from '../canvas'
 import type { Bounds, Point } from '../canvas/types'
-import { getWorldBounds } from './geometry'
+import { getWorldBounds, getWorldMatrix } from './geometry'
 import { captureOrigins, moveGeometry, resizedBox, resizeGeometry, rotateGeometry, selectionBounds, selectionBox, selectionRoots } from './selectionGeometry'
 import type { ResizeHandle, SelectionBox, TransformOrigin } from './selectionGeometry'
 import { computeSnap } from './snapEngine'
@@ -11,9 +11,11 @@ import { SnapGuides } from './SnapGuides'
 import { SpatialBoundsIndex } from './spatialIndex'
 import { getSnapConfig } from './snapConfig'
 import type { SceneStore } from './store'
-import type { AutoLayout, BooleanOperation, ElementGeometry } from './types'
+import type { AutoLayout, BooleanOperation, ElementGeometry, FrameElement } from './types'
 import { transformedSource } from './booleanGeometry'
 import { AutoLayoutHandles } from './AutoLayoutHandles'
+import { calculateAutoLayoutReorderIndex, findAutoLayoutDropTarget, getAutoLayoutDropIndicator } from './autoLayout'
+import type { AutoLayoutDropIndicator } from './autoLayout'
 import { dragSpacing, layoutHandleCursor } from './layoutHandles'
 import type { SpacingProperty } from './layoutHandles'
 import { componentRoot } from './components'
@@ -61,6 +63,7 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
   const [marquee, setMarquee] = useState<Bounds | null>(null)
   const [activeCursor, setActiveCursor] = useState<string | null>(null)
   const [activeSpacing, setActiveSpacing] = useState<SpacingProperty | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<AutoLayoutDropIndicator | null>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const box = selectionBox(state, state.selection)
   const selectedNode = state.selection.length === 1 ? state.elements[state.selection[0]] : undefined
@@ -130,6 +133,7 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
       setMarquee(null)
       setActiveCursor(null)
       setActiveSpacing(null)
+      setDropIndicator(null)
     }
     const applyPointer = (event: PointerEvent) => {
       if (!drag) return
@@ -170,6 +174,68 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
           delta.y += snap.dy
           setGuides(snap.guides)
         } else setGuides([])
+
+        // Real-time auto-layout hierarchy reordering and drop indicator
+        if (drag.origins.length === 1) {
+          const origin = drag.origins[0]
+          const curState = store.getSnapshot()
+          const node = curState.elements[origin.id]
+          if (node && !store.isLocked(node.id)) {
+            const center = { x: origin.center.x + delta.x, y: origin.center.y + delta.y }
+            const currentParent = node.parentId ? curState.elements[node.parentId] : null
+            const isInAutoLayout = currentParent?.type === 'frame' && !!currentParent.layout
+
+            if (isInAutoLayout && currentParent) {
+              const parentBounds = getWorldBounds(curState, currentParent.id)
+              const margin = 24
+              if (
+                center.x >= parentBounds.x - margin &&
+                center.x <= parentBounds.x + parentBounds.width + margin &&
+                center.y >= parentBounds.y - margin &&
+                center.y <= parentBounds.y + parentBounds.height + margin
+              ) {
+                const [a, b, c, d, e, f] = getWorldMatrix(curState, currentParent.id)
+                const det = a * d - b * c
+                if (Math.abs(det) > 1e-9) {
+                  const dx = center.x - e, dy = center.y - f
+                  const localX = (d * dx - c * dy) / det
+                  const localY = (-b * dx + a * dy) / det
+                  const targetIndex = calculateAutoLayoutReorderIndex(currentParent, curState.elements, origin.id, { x: localX, y: localY })
+                  const children = currentParent.children
+                  const currentIndex = children.indexOf(origin.id)
+                  if (targetIndex !== currentIndex && targetIndex >= 0 && targetIndex <= children.length) {
+                    store.reorder(origin.id, targetIndex)
+                  }
+                  const refreshedState = store.getSnapshot()
+                  const indicator = getAutoLayoutDropIndicator(
+                    refreshedState.elements[currentParent.id] as FrameElement,
+                    refreshedState.elements,
+                    targetIndex,
+                    refreshedState,
+                  )
+                  setDropIndicator(indicator)
+                }
+              } else {
+                const dropTarget = findAutoLayoutDropTarget(curState, center, [origin.id])
+                if (dropTarget) {
+                  store.reparent(origin.id, dropTarget.frameId, dropTarget.insertIndex)
+                  setDropIndicator(dropTarget.indicator)
+                } else {
+                  setDropIndicator(null)
+                }
+              }
+            } else {
+              const dropTarget = findAutoLayoutDropTarget(curState, center, [origin.id])
+              if (dropTarget) {
+                store.reparent(origin.id, dropTarget.frameId, dropTarget.insertIndex)
+                setDropIndicator(dropTarget.indicator)
+              } else {
+                setDropIndicator(null)
+              }
+            }
+          }
+        }
+
         update(drag.origins, origin => moveGeometry(origin, delta))
       } else if (drag.type === 'resize') {
         let after = resizedBox(drag.box, drag.handle, delta, event.shiftKey)
@@ -352,6 +418,20 @@ export const SelectionOverlay = memo(function SelectionOverlay({ store, controll
       <div data-handle="rotate" className="sel-rotate-handle" title="Rotate · Shift for 15° increments" />
       {selectedNode?.type === 'frame' && <AutoLayoutHandles frame={selectedNode} state={state} store={store} zoom={camera.zoom} rotation={box.rotation} active={activeSpacing} />}
     </div>}
+    {!panMode && dropIndicator && (
+      <div
+        className={`layout-drop-indicator ${dropIndicator.axis === 'vertical' ? 'is-vertical' : 'is-horizontal'}`}
+        data-testid="auto-layout-drop-indicator"
+        style={{
+          left: dropIndicator.world.x * camera.zoom + camera.x,
+          top: dropIndicator.world.y * camera.zoom + camera.y,
+          width: Math.max(2, dropIndicator.world.width * camera.zoom),
+          height: Math.max(2, dropIndicator.world.height * camera.zoom),
+          transform: dropIndicator.world.rotation ? `rotate(${dropIndicator.world.rotation}deg)` : undefined,
+          transformOrigin: '0 0',
+        }}
+      />
+    )}
     {!panMode && box && isMaster && selectedNode && !activeCursor && (
       <div
         className="sel-component-badge is-master"

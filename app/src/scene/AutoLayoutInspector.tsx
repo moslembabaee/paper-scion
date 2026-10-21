@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowRight, Maximize2, MoveLeft, MoveRight, Plus, Split, Unlink, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, ChevronsLeft, ChevronsRight, Maximize2, MoveLeft, MoveRight, Plus, Split, Unlink, X } from 'lucide-react'
 import { DEFAULT_AUTO_LAYOUT, FIXED_SIZING } from './autoLayout'
 import type { SceneStore } from './store'
 import type { AutoLayout, LayoutPadding, SceneElement, SizingRule } from './types'
@@ -247,6 +247,68 @@ export function AutoLayoutInspector({ node, parent, store }: { node: SceneElemen
         </div>
 
         <p className="layout-hint">Drag the blue spacing handles on the canvas. Shift adjusts in 8 px steps; Escape cancels.</p>
+
+        {node.children.length > 0 && (
+          <div className="layout-children-flow" data-testid="layout-children-flow">
+            <div className="layout-children-heading">
+              <span className="section-caption">CHILDREN IN FLOW ({node.children.length})</span>
+            </div>
+            <div className="layout-children-chips">
+              {node.children.map((childId, idx) => {
+                const childNode = store.getSnapshot().elements[childId]
+                if (!childNode) return null
+                return (
+                  <div key={childId} className="layout-child-chip" title={`${childNode.name} (slot ${idx + 1})`}>
+                    <span className="layout-child-chip-index">{idx + 1}</span>
+                    <span className="layout-child-chip-name">{childNode.name}</span>
+                    <div className="layout-child-chip-actions">
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        disabled={idx === 0}
+                        aria-label={`Move ${childNode.name} to start`}
+                        title="Move to start"
+                        onClick={() => store.reorder(childId, 0)}
+                      >
+                        <ChevronsLeft size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        disabled={idx === 0}
+                        aria-label={`Move ${childNode.name} earlier`}
+                        title="Move earlier"
+                        onClick={() => store.reorder(childId, idx - 1)}
+                      >
+                        <MoveLeft size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        disabled={idx === node.children.length - 1}
+                        aria-label={`Move ${childNode.name} later`}
+                        title="Move later"
+                        onClick={() => store.reorder(childId, idx + 1)}
+                      >
+                        <MoveRight size={10} />
+                      </button>
+                      <button
+                        type="button"
+                        className="quiet-button"
+                        disabled={idx === node.children.length - 1}
+                        aria-label={`Move ${childNode.name} to end`}
+                        title="Move to end"
+                        onClick={() => store.reorder(childId, node.children.length - 1)}
+                      >
+                        <ChevronsRight size={10} />
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </> : <p className="layout-hint">Give this frame a flow. Children follow as you edit.</p>}
     </>}
 
@@ -319,6 +381,18 @@ export function AutoLayoutInspector({ node, parent, store }: { node: SceneElemen
             type="button"
             className="layout-order-btn"
             disabled={!canMoveEarlier}
+            aria-label="Move child to start of layout flow"
+            title="Move child to start of layout flow"
+            onClick={() => {
+              if (canMoveEarlier) store.reorder(node.id, 0)
+            }}
+          >
+            <ChevronsLeft size={11} />
+          </button>
+          <button
+            type="button"
+            className="layout-order-btn"
+            disabled={!canMoveEarlier}
             aria-label="Move child earlier in layout flow"
             title="Move child earlier in layout flow ([)"
             onClick={() => {
@@ -338,6 +412,18 @@ export function AutoLayoutInspector({ node, parent, store }: { node: SceneElemen
             }}
           >
             <MoveRight size={11} />
+          </button>
+          <button
+            type="button"
+            className="layout-order-btn"
+            disabled={!canMoveLater}
+            aria-label="Move child to end of layout flow"
+            title="Move child to end of layout flow"
+            onClick={() => {
+              if (canMoveLater) store.reorder(node.id, totalChildren - 1)
+            }}
+          >
+            <ChevronsRight size={11} />
           </button>
         </div>
       </div>
