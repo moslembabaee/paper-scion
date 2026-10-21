@@ -1,6 +1,6 @@
 import { ComponentPropertiesPanel } from './ComponentPropertiesPanel'
 import { useMemo, useState, useSyncExternalStore } from 'react'
-import { ArrowUpRight, Copy, Diamond, Component as Diamonds, Plus, RotateCcw, Search, Sparkles, Unlink, Upload, Layers } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, Copy, Diamond, Component as Diamonds, Plus, RefreshCw, RotateCcw, Search, Sparkles, Unlink, Upload, Layers } from 'lucide-react'
 import type { ViewportController } from '../canvas/ViewportController'
 import type { ComponentOverrides, SceneElement } from './types'
 import type { SceneStore } from './store'
@@ -135,13 +135,37 @@ export function ComponentInspector({ store, controller, node }: { store: SceneSt
       })
     : []
   const hasVariantMatrix = Boolean(master?.component?.kind === 'master' && master.component.variantMatrix)
+  const allMasters = useMemo(() => Object.values(state.elements).filter(n => n.component?.kind === 'master'), [state.elements])
 
   return <div className="inspector-section component-section" data-testid="component-inspector">
     <div className="component-section-heading"><span className="section-caption">{instance ? 'COMPONENT INSTANCE' : 'MASTER COMPONENT'}</span>{instance ? <Diamond size={13} /> : <Diamonds size={13} />}</div>
     <div className="component-identity"><span className={`component-mark ${instance ? '' : 'is-master'}`}><Diamond size={18} /></span><div><strong>{master?.name}</strong><span>{instance ? count ? `${count} local override${count === 1 ? '' : 's'}` : 'Synced with master' : `${instances} instance${instances === 1 ? '' : 's'} in this document`}</span></div></div>
     {master && <ComponentPropertiesPanel key={root.id} store={store} master={master} root={root} disabled={active || store.isLocked(root.id) || (!instance && store.isLocked(masterId))} />}
     {instance ? <>
-      <button className="text-action" disabled={active || !store.isVisible(masterId) || store.isLocked(masterId)} onClick={() => focus(masterId)}>Go to master<ArrowUpRight size={12} /></button>
+      <div className="component-heading-actions" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <button className="text-action" disabled={active || !store.isVisible(masterId) || store.isLocked(masterId)} onClick={() => focus(masterId)}>Go to master<ArrowUpRight size={12} /></button>
+        {allMasters.length > 1 && (
+          <div className="component-swap-row" style={{ margin: 0, padding: '2px 6px', flex: 1, maxWidth: '180px' }} title="Swap this instance to another master component">
+            <div className="component-swap-label">
+              <ArrowLeftRight size={10} />
+              <span>Swap:</span>
+            </div>
+            <select
+              className="property-input component-swap-select"
+              aria-label="Swap component master"
+              disabled={active || store.isLocked(root.id)}
+              value={masterId}
+              onChange={event => perform(() => store.swapComponentInstance(root.id, event.currentTarget.value))}
+            >
+              {allMasters.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
       {count > 0 && (
         <div className="component-override-list" aria-label="Property overrides">
           {dynamicOverrides.length > 0 && (
@@ -297,6 +321,15 @@ export function ComponentInspector({ store, controller, node }: { store: SceneSt
             <Upload size={12} />Push overrides to master
           </button>
         )}
+        <button
+          className="component-action"
+          disabled={active || !master}
+          title="Pull latest master changes and synchronize instance"
+          aria-label="Sync with master"
+          onClick={() => perform(() => store.syncInstanceWithMaster(node.id))}
+        >
+          <RefreshCw size={12} />Sync with master
+        </button>
         <button className="component-action" disabled={!count || active} onClick={() => perform(() => store.resetAllComponentOverrides(node.id))}><RotateCcw size={12} />Reset overrides</button>
         <button className="component-action" disabled={active} onClick={() => perform(() => store.detachComponentInstance(node.id))}><Unlink size={12} />Detach instance</button>
       </div>
@@ -304,6 +337,9 @@ export function ComponentInspector({ store, controller, node }: { store: SceneSt
     </> : <>
       <button className="component-action primary" disabled={active} onClick={() => perform(() => { const instance = store.createComponentInstance(masterId); focus(instance.id) })}><Plus size={13} />Insert instance<ArrowUpRight size={12} /></button>
       <button className="component-action" disabled={active || store.isLocked(masterId)} title="Duplicate master component on 120px grid" onClick={() => perform(() => { const copy = store.duplicateComponent(masterId); focus(copy.id) })}><Copy size={12} />Duplicate master</button>
+      {instances > 0 && (
+        <button className="component-action" disabled={active || store.isLocked(masterId)} title="Sync all instances in document with this master" aria-label="Sync all instances" onClick={() => perform(() => store.syncAllInstancesWithMaster(masterId))}><RefreshCw size={12} />Sync all instances ({instances})</button>
+      )}
       <button className="component-action" disabled={active || store.isLocked(masterId)} title="Auto-expose detected properties" onClick={() => perform(() => store.autoExposeComponentProperties(masterId))}><Sparkles size={12} />Auto-expose properties</button>
       <p>Changes to this master flow to every linked instance.</p>
     </>}
