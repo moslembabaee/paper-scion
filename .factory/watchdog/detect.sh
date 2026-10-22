@@ -168,9 +168,14 @@ fi
 if pgrep -f "scion_pipeline.py" >/dev/null 2>&1; then
   : # alive
 else
-  add_finding "warning" "pipeline_down" \
-    "Autonomous pipeline supervisor (scion_pipeline.py) is not running" \
-    "expected_process=scion_pipeline.py"
+  # Only report pipeline down if there are actually approved issues in the queue.
+  # When queue is empty, pipeline being inactive is expected and healthy.
+  open_approved=$(gh issue list -R "$REPO" --state open --label approved --limit 50 --json number 2>/dev/null | grep -oE '"number":[0-9]+' | wc -l)
+  if [ "${open_approved:-0}" -gt 0 ]; then
+    add_finding "warning" "pipeline_down" \
+      "Autonomous pipeline supervisor (scion_pipeline.py) is not running while ${open_approved} approved issue(s) are pending" \
+      "expected_process=scion_pipeline.py open_approved=$open_approved"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

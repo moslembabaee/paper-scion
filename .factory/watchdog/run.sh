@@ -25,6 +25,7 @@ bash "$HERE/detect.sh"
 detect_code=$?
 
 if [ "$detect_code" -eq 0 ]; then
+  rm -f "$STATE_DIR/findings.json" "$STATE_DIR/diagnosis.md" "$STATE_DIR/last_notify_ts"
   log "Healthy — no diagnosis, no notification."
   exit 0
 fi

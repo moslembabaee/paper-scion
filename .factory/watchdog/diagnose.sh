@@ -21,6 +21,29 @@ LOG_FILE="$STATE_DIR/watchdog.log"
 log() { echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] [DIAGNOSE] $*" >> "$LOG_FILE"; }
 
 [ -f "$FINDINGS_FILE" ] || { log "No findings file."; exit 0; }
+
+# Respect LLM_MIN_SEVERITY (default: critical). Do not call LLM for minor warnings.
+min_sev="${LLM_MIN_SEVERITY:-critical}"
+has_matching_sev=$(python3 - "$FINDINGS_FILE" "$min_sev" << 'PY' 2>/dev/null
+import json, sys
+try:
+    findings = json.load(open(sys.argv[1]))
+    min_s = sys.argv[2].lower()
+    if min_s == "critical":
+        ok = any(f.get("severity") == "critical" for f in findings)
+    else:
+        ok = len(findings) > 0
+    print("yes" if ok else "no")
+except Exception:
+    print("no")
+PY
+)
+
+if [ "${has_matching_sev:-no}" != "yes" ]; then
+  log "No findings match LLM_MIN_SEVERITY ($min_sev). Skipping LLM diagnosis."
+  exit 0
+fi
+
 [ -f "${LLM_API_KEY_FILE:-}" ] || { log "No LLM key file (${LLM_API_KEY_FILE:-unset})."; exit 0; }
 
 API_KEY=$(tr -d '\r\n' < "$LLM_API_KEY_FILE")

@@ -49,18 +49,23 @@ PY
 [ -z "$summary" ] && { log "Empty summary."; exit 0; }
 
 # Suppress duplicate notifications for the same finding set unless NOTIFY_ALWAYS=1.
-# The fingerprint includes the check set AND the minute of detection, so a NEW
-# incident (even with an identical message) is always reported, while a
-# re-run of the same still-open incident within the same minute is not.
+# Repeated identical alerts use a cooldown window (default 3600s = 1 hour).
+COOLDOWN_SEC="${NOTIFY_COOLDOWN_SEC:-3600}"
 if [ "${NOTIFY_ALWAYS:-0}" != "1" ]; then
   fingerprint=$(printf '%s' "$summary" | md5sum | awk '{print $1}')
-  minute=$(date -u '+%Y%m%d%H%M')
-  prev=$(cat "$LAST_NOTIFY_FILE" 2>/dev/null || echo "")
-  if [ "$fingerprint" = "$prev" ] && [ "${prev%%:*}" = "$minute" ]; then
-    log "Same finding set within the same minute, skipping notification."
-    exit 0
+  now_sec=$(date +%s)
+  prev_data=$(cat "$LAST_NOTIFY_FILE" 2>/dev/null || echo "")
+  prev_fp="${prev_data%%:*}"
+  prev_ts="${prev_data##*:}"
+
+  if [ -n "$prev_fp" ] && [ "$fingerprint" = "$prev_fp" ]; then
+    elapsed=$(( now_sec - ${prev_ts:-0} ))
+    if [ "$elapsed" -lt "$COOLDOWN_SEC" ]; then
+      log "Identical findings already notified ${elapsed}s ago (cooldown: ${COOLDOWN_SEC}s). Skipping notification."
+      exit 0
+    fi
   fi
-  echo "$fingerprint:$minute" > "$LAST_NOTIFY_FILE"
+  echo "$fingerprint:$now_sec" > "$LAST_NOTIFY_FILE"
 fi
 
 # Telegram has a 4096 char limit per message.
