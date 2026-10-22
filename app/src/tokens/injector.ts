@@ -136,18 +136,19 @@ export function injectThemeTokensCSS(
  * React hook that injects and maintains real-time CSS custom properties in document head.
  */
 export function useThemeTokenInjector(store: SceneStore): string {
-  const snapshot = useScene(store, state => ({
-    tokens: state.tokens,
-    styleLibrary: state.styleLibrary,
-  }))
+  // Subscribe to the two slices directly. Returning a new wrapper object from
+  // the selector would make React read it as a fresh snapshot on every render
+  // and loop forever (error #185).
+  const tokens = useScene(store, state => state.tokens)
+  const styleLibrary = useScene(store, state => state.styleLibrary)
 
   const css = useMemo(() => {
-    return generateThemeTokensCSS(snapshot.tokens, snapshot.styleLibrary)
-  }, [snapshot.tokens, snapshot.styleLibrary])
+    return generateThemeTokensCSS(tokens, styleLibrary)
+  }, [tokens, styleLibrary])
 
   useEffect(() => {
-    return injectThemeTokensCSS(snapshot.tokens, snapshot.styleLibrary)
-  }, [snapshot.tokens, snapshot.styleLibrary])
+    return injectThemeTokensCSS(tokens, styleLibrary)
+  }, [tokens, styleLibrary])
 
   return css
 }

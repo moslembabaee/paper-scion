@@ -227,8 +227,30 @@ export function cycleNextMaskMode(mode?: MaskClipMode): MaskClipMode {
   return 'alpha'
 }
 
+/**
+ * Mask hierarchy reports are pure functions of the element map, but callers
+ * subscribe to them through `useSyncExternalStore`, which compares snapshots by
+ * reference. A freshly built report object would read as a store change on
+ * every render and drive React into an endless update loop (error #185), so
+ * each element map keeps one report per node.
+ */
+const hierarchyCache = new WeakMap<Readonly<Record<string, SceneElement>>, Map<string, MaskHierarchyInfo>>()
+
 /** Get complete mask hierarchy inspection information for any scene node */
 export function getMaskHierarchy(elements: Readonly<Record<string, SceneElement>>, id: string): MaskHierarchyInfo {
+  let reports = hierarchyCache.get(elements)
+  if (!reports) {
+    reports = new Map()
+    hierarchyCache.set(elements, reports)
+  }
+  const cached = reports.get(id)
+  if (cached) return cached
+  const report = computeMaskHierarchy(elements, id)
+  reports.set(id, report)
+  return report
+}
+
+function computeMaskHierarchy(elements: Readonly<Record<string, SceneElement>>, id: string): MaskHierarchyInfo {
   const node = elements[id]
   const isMask = Boolean(node?.mask)
   const isMaskGroup = node?.type === 'frame' && Boolean(frameMask(elements, node as FrameElement))

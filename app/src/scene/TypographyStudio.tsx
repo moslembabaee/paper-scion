@@ -238,11 +238,16 @@ export function TypographyStudio({ store, node, binding }: TypographyStudioProps
     spacing: 0,
   }
 
-  // Available vector layers on canvas for linking (path, rectangle, ellipse)
-  const canvasVectorLayers = useScene(store, state =>
-    Object.values(state.elements).filter(
+  // Available vector layers on canvas for linking (path, rectangle, ellipse).
+  // The list is derived from the element map, so it must keep its identity
+  // while that map is unchanged — a fresh array on every read would put React
+  // into an endless update loop (error #185).
+  const elements = useScene(store, state => state.elements)
+  const canvasVectorLayers = useMemo(
+    () => Object.values(elements).filter(
       (el): el is VectorElement => isVector(el) && el.id !== node.id
-    )
+    ),
+    [elements, node.id]
   )
 
   return (
