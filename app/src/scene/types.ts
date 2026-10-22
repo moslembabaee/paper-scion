@@ -448,7 +448,9 @@ export type ComponentStateTrigger =
   | 'on-pointerup'
   | 'on-hover-end'
   | 'after-delay'
-export type InteractiveStateType = 'default' | 'hover' | 'pressed' | 'active'
+  | 'on-focus'
+  | 'on-blur'
+export type InteractiveStateType = 'default' | 'hover' | 'pressed' | 'active' | 'focused' | 'disabled'
 
 export interface ComponentStateTransition {
   readonly id: string

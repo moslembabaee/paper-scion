@@ -872,12 +872,13 @@ export class SceneStore {
     }
   }
 
-  generateInteractiveStates(masterId: string): void {
+  generateInteractiveStates(masterId: string, customStates?: readonly string[]): void {
     const master = this.require(masterId)
     if (master.component?.kind !== 'master') throw new Error('Choose a master component')
     if (this.isLocked(masterId) || this.history.getSnapshot().active) throw new Error('Unlock the master and finish the active edit first')
     const properties = [...(master.component.properties ?? [])]
-    const existingVariant = properties.find(p => p.kind === 'variant' && (p.name.toLowerCase() === 'state' || p.options.some(o => ['default', 'hover', 'pressed', 'active'].includes(o.value))))
+    const stateList = customStates && customStates.length > 0 ? customStates : ['default', 'hover', 'pressed', 'active']
+    const existingVariant = properties.find(p => p.kind === 'variant' && (p.name.toLowerCase() === 'state' || p.options.some(o => stateList.includes(o.value))))
     const layers = subtree(this.state.elements, master.id)
     const baseCapture: Record<string, ComponentOverrides> = {}
     for (const layer of layers) {
@@ -914,17 +915,42 @@ export class SceneStore {
         stroke: { color: '#81adec', width: 2, dash: [] }
       }
     }
+    const focusedCapture: Record<string, ComponentOverrides> = { ...baseCapture }
+    focusedCapture[master.id] = {
+      ...focusedCapture[master.id],
+      style: {
+        ...focusedCapture[master.id]?.style,
+        stroke: { color: '#81adec', width: 2, dash: [2, 2] }
+      }
+    }
+    const disabledCapture: Record<string, ComponentOverrides> = {}
+    for (const layer of layers) {
+      disabledCapture[layer.id] = {
+        ...baseCapture[layer.id],
+        style: {
+          ...layer.style,
+          opacity: 0.4,
+        }
+      }
+    }
 
-    const stateMachine = createDefaultStateMachine(['default', 'hover', 'pressed', 'active'])
+    const getCaptureForState = (val: string): Record<string, ComponentOverrides> => {
+      if (val === 'default') return baseCapture
+      if (val === 'hover') return hoverCapture
+      if (val === 'pressed') return pressedCapture
+      if (val === 'active') return activeCapture
+      if (val === 'focused') return focusedCapture
+      if (val === 'disabled') return disabledCapture
+      return baseCapture
+    }
+
+    const stateMachine = createDefaultStateMachine(stateList)
     let nextProperties: ComponentProperty[]
     if (existingVariant && existingVariant.kind === 'variant') {
       const existingOptions = new Map(existingVariant.options.map(o => [o.value, o]))
-      const options: ComponentVariant[] = ['default', 'hover', 'pressed', 'active'].map(val => {
+      const options: ComponentVariant[] = stateList.map(val => {
         if (existingOptions.has(val)) return existingOptions.get(val)!
-        if (val === 'default') return { value: val, layers: baseCapture }
-        if (val === 'hover') return { value: val, layers: hoverCapture }
-        if (val === 'pressed') return { value: val, layers: pressedCapture }
-        return { value: val, layers: activeCapture }
+        return { value: val, layers: getCaptureForState(val) }
       })
       for (const opt of existingVariant.options) {
         if (!options.some(o => o.value === opt.value)) options.push(opt)
@@ -935,13 +961,8 @@ export class SceneStore {
         id: crypto.randomUUID(),
         name: 'State',
         kind: 'variant',
-        defaultValue: 'default',
-        options: [
-          { value: 'default', layers: baseCapture },
-          { value: 'hover', layers: hoverCapture },
-          { value: 'pressed', layers: pressedCapture },
-          { value: 'active', layers: activeCapture },
-        ],
+        defaultValue: stateList[0] ?? 'default',
+        options: stateList.map(val => ({ value: val, layers: getCaptureForState(val) })),
         stateMachine,
       }
       nextProperties = [...properties, stateProperty]
@@ -991,9 +1012,44 @@ export class SceneStore {
 
     const properties = [...(master.component.properties ?? [])]
     const existingVariant = properties.find(p => p.kind === 'variant')
+    const stateCapture: Record<string, ComponentOverrides> = { ...baseCapture }
+    if (trimmed === 'hover') {
+      if (master.style.fill && typeof master.style.fill === 'string') {
+        stateCapture[master.id] = {
+          ...stateCapture[master.id],
+          style: { ...stateCapture[master.id]?.style, opacity: Math.max(0.7, (master.style.opacity ?? 1) * 0.9) }
+        }
+      }
+    } else if (trimmed === 'active') {
+      stateCapture[master.id] = {
+        ...stateCapture[master.id],
+        style: {
+          ...stateCapture[master.id]?.style,
+          stroke: { color: '#81adec', width: 2, dash: [] }
+        }
+      }
+    } else if (trimmed === 'focused') {
+      stateCapture[master.id] = {
+        ...stateCapture[master.id],
+        style: {
+          ...stateCapture[master.id]?.style,
+          stroke: { color: '#81adec', width: 2, dash: [2, 2] }
+        }
+      }
+    } else if (trimmed === 'disabled') {
+      for (const layer of layers) {
+        stateCapture[layer.id] = {
+          ...baseCapture[layer.id],
+          style: {
+            ...layer.style,
+            opacity: 0.4,
+          }
+        }
+      }
+    }
     let nextProperties: ComponentProperty[]
     if (existingVariant && existingVariant.kind === 'variant') {
-      const options = [...existingVariant.options, { value: trimmed, layers: baseCapture }]
+      const options = [...existingVariant.options, { value: trimmed, layers: stateCapture }]
       nextProperties = properties.map(p => p.id === existingVariant.id ? { ...existingVariant, options, stateMachine: nextMachine } : p)
     } else {
       const stateProperty: ComponentProperty = {
@@ -1001,7 +1057,7 @@ export class SceneStore {
         name: 'State',
         kind: 'variant',
         defaultValue: machine.initial,
-        options: nextStates.map(s => ({ value: s, layers: baseCapture })),
+        options: nextStates.map(s => ({ value: s, layers: s === trimmed ? stateCapture : baseCapture })),
         stateMachine: nextMachine,
       }
       nextProperties = [...properties, stateProperty]
@@ -1368,7 +1424,7 @@ export class SceneStore {
         })
       }
     } else if (preset === 'state') {
-      for (const stateVal of ['default', 'hover', 'pressed', 'active', 'disabled']) {
+      for (const stateVal of ['default', 'hover', 'pressed', 'active', 'focused', 'disabled']) {
         const stateLayers: Record<string, ComponentOverrides> = {}
         for (const layer of layers) {
           let op = layer.style.opacity ?? 1
@@ -1376,6 +1432,7 @@ export class SceneStore {
           if (stateVal === 'hover') op = Math.max(0.7, op * 0.9)
           else if (stateVal === 'pressed') op = Math.max(0.5, op * 0.75)
           else if (stateVal === 'active') stroke = { color: '#81adec', width: 2, dash: [] }
+          else if (stateVal === 'focused') stroke = { color: '#81adec', width: 2, dash: [2, 2] }
           else if (stateVal === 'disabled') op = 0.4
           stateLayers[layer.id] = {
             style: {
@@ -1877,6 +1934,7 @@ export class SceneStore {
             if (stateVal === 'hover') layerStyle.opacity = 0.9
             else if (stateVal === 'pressed') layerStyle.opacity = 0.75
             else if (stateVal === 'active') layerStyle.stroke = { color: '#81adec', width: 2, dash: [] }
+            else if (stateVal === 'focused') layerStyle.stroke = { color: '#81adec', width: 2, dash: [2, 2] }
             else if (stateVal === 'disabled') layerStyle.opacity = 0.4
           }
 

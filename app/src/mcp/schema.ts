@@ -209,7 +209,7 @@ const springSchema = object({
 const componentStateTransitionSchema = object({
   id: str(),
   fromState: str(),
-  trigger: { type: 'string', enum: ['on-click', 'on-hover', 'while-pressed', 'on-pointerdown', 'on-pointerup', 'on-hover-end', 'after-delay'] },
+  trigger: { type: 'string', enum: ['on-click', 'on-hover', 'while-pressed', 'on-pointerdown', 'on-pointerup', 'on-hover-end', 'after-delay', 'on-focus', 'on-blur'] },
   targetState: str(),
   spring: springSchema,
   delay: positive,

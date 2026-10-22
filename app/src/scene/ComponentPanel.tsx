@@ -68,11 +68,14 @@ export function overrideDetails(node: SceneElement): OverrideDetail[] {
     openTypeFeatures: 'OpenType',
     clipContent: 'Clip Content',
     d: 'Vector Path',
+    visible: 'Visibility',
   }
 
   for (const [key, val] of Object.entries(properties)) {
     let valStr: string | undefined
-    if (['fontSize', 'cornerRadius', 'width', 'height', 'x', 'y'].includes(key)) {
+    if (key === 'visible') {
+      valStr = val ? 'Visible' : 'Hidden'
+    } else if (['fontSize', 'cornerRadius', 'width', 'height', 'x', 'y'].includes(key)) {
       valStr = `${val}px`
     } else if (key === 'letterSpacing') {
       valStr = `${val}px`

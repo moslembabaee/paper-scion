@@ -12,6 +12,8 @@ export const DEFAULT_INTERACTIVE_STATES: readonly InteractiveStateType[] = Objec
   'hover',
   'pressed',
   'active',
+  'focused',
+  'disabled',
 ])
 
 export const DEFAULT_STATE_TRIGGERS: readonly ComponentStateTrigger[] = Object.freeze([
@@ -22,6 +24,8 @@ export const DEFAULT_STATE_TRIGGERS: readonly ComponentStateTrigger[] = Object.f
   'on-pointerup',
   'on-hover-end',
   'after-delay',
+  'on-focus',
+  'on-blur',
 ])
 
 export const STATE_TRIGGER_LABELS: Readonly<Record<ComponentStateTrigger, string>> = Object.freeze({
@@ -32,6 +36,8 @@ export const STATE_TRIGGER_LABELS: Readonly<Record<ComponentStateTrigger, string
   'on-pointerup': 'On Pointer Up',
   'on-hover-end': 'On Hover End',
   'after-delay': 'After Delay',
+  'on-focus': 'On Focus',
+  'on-blur': 'On Blur',
 })
 
 export function normalizeTrigger(raw: string): ComponentStateTrigger | undefined {
@@ -51,6 +57,10 @@ export function normalizeTrigger(raw: string): ComponentStateTrigger | undefined
     'leave': 'on-hover-end',
     'delay': 'after-delay',
     'after-delay': 'after-delay',
+    'focus': 'on-focus',
+    'on-focus': 'on-focus',
+    'blur': 'on-blur',
+    'on-blur': 'on-blur',
   }
   return map[raw.toLowerCase().trim()]
 }
@@ -75,6 +85,15 @@ export function createDefaultStateMachine(
       spring: Object.freeze({ stiffness: 220, damping: 24, mass: 1 }),
     })
   }
+  if (has('hover') && has('default')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'hover',
+      trigger: 'on-hover-end',
+      targetState: 'default',
+      spring: Object.freeze({ stiffness: 200, damping: 22, mass: 1 }),
+    })
+  }
   if (has('hover') && has('pressed')) {
     transitions.push({
       id: crypto.randomUUID(),
@@ -92,6 +111,22 @@ export function createDefaultStateMachine(
       targetState: 'active',
       spring: Object.freeze({ stiffness: 200, damping: 18, mass: 1 }),
     })
+  } else if (has('hover') && has('active') && !has('pressed')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'hover',
+      trigger: 'on-click',
+      targetState: 'active',
+      spring: Object.freeze({ stiffness: 220, damping: 20, mass: 1 }),
+    })
+  } else if (has('default') && has('active') && !has('hover') && !has('pressed')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'default',
+      trigger: 'on-click',
+      targetState: 'active',
+      spring: Object.freeze({ stiffness: 220, damping: 20, mass: 1 }),
+    })
   }
   if (has('active') && has('default')) {
     transitions.push({
@@ -108,6 +143,42 @@ export function createDefaultStateMachine(
       trigger: 'on-click',
       targetState: 'default',
       spring: Object.freeze({ stiffness: 200, damping: 22, mass: 1 }),
+    })
+  }
+  if (has('default') && has('focused')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'default',
+      trigger: 'on-focus',
+      targetState: 'focused',
+      spring: Object.freeze({ stiffness: 240, damping: 24, mass: 1 }),
+    })
+  }
+  if (has('hover') && has('focused')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'hover',
+      trigger: 'on-focus',
+      targetState: 'focused',
+      spring: Object.freeze({ stiffness: 240, damping: 24, mass: 1 }),
+    })
+  }
+  if (has('focused') && has('default')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'focused',
+      trigger: 'on-blur',
+      targetState: 'default',
+      spring: Object.freeze({ stiffness: 200, damping: 22, mass: 1 }),
+    })
+  }
+  if (has('focused') && has('active')) {
+    transitions.push({
+      id: crypto.randomUUID(),
+      fromState: 'focused',
+      trigger: 'on-click',
+      targetState: 'active',
+      spring: Object.freeze({ stiffness: 220, damping: 20, mass: 1 }),
     })
   }
 
