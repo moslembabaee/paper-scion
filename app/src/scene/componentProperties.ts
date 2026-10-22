@@ -58,7 +58,7 @@ export function createVariantPresetDimensions(preset: 'size' | 'state' | 'theme'
   if (preset === 'state') {
     return {
       dimensions: [
-        { id: crypto.randomUUID(), name: 'State', values: ['default', 'hover', 'pressed', 'active', 'disabled'], defaultValue: 'default' },
+        { id: crypto.randomUUID(), name: 'State', values: ['default', 'hover', 'pressed', 'active', 'focused', 'disabled'], defaultValue: 'default' },
       ],
     }
   }
@@ -72,7 +72,7 @@ export function createVariantPresetDimensions(preset: 'size' | 'state' | 'theme'
   return {
     dimensions: [
       { id: crypto.randomUUID(), name: 'Size', values: ['sm', 'md', 'lg'], defaultValue: 'md' },
-      { id: crypto.randomUUID(), name: 'State', values: ['default', 'hover', 'active'], defaultValue: 'default' },
+      { id: crypto.randomUUID(), name: 'State', values: ['default', 'hover', 'active', 'focused', 'disabled'], defaultValue: 'default' },
       { id: crypto.randomUUID(), name: 'Theme', values: ['paper', 'dark', 'accent'], defaultValue: 'paper' },
     ],
   }

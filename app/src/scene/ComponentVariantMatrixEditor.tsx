@@ -181,7 +181,7 @@ export function ComponentVariantMatrixEditor({
         <button
           className="preset-btn"
           disabled={disabled}
-          title="Add State dimension (default, hover, pressed, active, disabled)"
+          title="Add State dimension (default, hover, active, focused, disabled)"
           onClick={() => handleApplyPreset('state')}
         >
           + State

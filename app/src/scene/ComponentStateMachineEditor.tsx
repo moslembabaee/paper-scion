@@ -182,17 +182,33 @@ export function ComponentStateMachineEditor({
             <Sparkles size={20} strokeWidth={1.5} />
           </div>
           <p className="state-machine-empty-text">
-            Add prototyping states (default, hover, pressed, active) with spring physics micro-interactions.
+            Add prototyping states (default, hover, active, focused, disabled) with spring physics micro-interactions.
           </p>
-          <button
-            type="button"
-            className="component-action primary"
-            disabled={disabled}
-            onClick={handleSetup}
-          >
-            <Sparkles size={13} />
-            Setup interactive states
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="component-action primary"
+              disabled={disabled}
+              onClick={handleSetup}
+            >
+              <Sparkles size={13} />
+              Setup interactive states
+            </button>
+            <button
+              type="button"
+              className="component-action"
+              disabled={disabled}
+              title="Generate state matrix with default, hover, active, focused, disabled"
+              onClick={() => {
+                perform(() => {
+                  store.generateInteractiveStates(master.id, ['default', 'hover', 'active', 'focused', 'disabled'])
+                })
+              }}
+            >
+              <Sliders size={13} />
+              5-State Matrix
+            </button>
+          </div>
         </div>
       ) : (
         <div className="state-machine-content">
@@ -235,8 +251,11 @@ export function ComponentStateMachineEditor({
             </div>
             <div
               className="sandbox-stage"
+              tabIndex={0}
               onMouseEnter={() => handleSandboxTrigger('on-hover')}
               onMouseLeave={handleSandboxLeave}
+              onFocus={() => handleSandboxTrigger('on-focus')}
+              onBlur={() => handleSandboxTrigger('on-blur')}
               onMouseDown={() => handleSandboxTrigger('on-pointerdown')}
               onMouseUp={() => {
                 handleSandboxTrigger('on-pointerup')
@@ -255,7 +274,7 @@ export function ComponentStateMachineEditor({
             >
               <div className="sandbox-card">
                 <MousePointerClick size={16} />
-                <span>Hover, press, or click here</span>
+                <span>Hover, press, click, or Tab/Focus here</span>
               </div>
             </div>
           </div>

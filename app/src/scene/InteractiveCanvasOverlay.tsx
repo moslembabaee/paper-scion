@@ -24,6 +24,7 @@ export function InteractiveCanvasOverlay({
   const overlayRef = useRef<HTMLDivElement>(null)
   const hoveredInstanceId = useRef<string | null>(null)
   const pressedInstanceId = useRef<string | null>(null)
+  const focusedInstanceId = useRef<string | null>(null)
   const originalStates = useRef<Map<string, string | null>>(new Map())
   const activeTransitions = useRef<Map<string, number>>(new Map())
   const delayedTimers = useRef<Map<string, number>>(new Map())
@@ -149,6 +150,10 @@ export function InteractiveCanvasOverlay({
         }
 
         const currentState = root.component.activeState ?? machine.initial
+        if (currentState === 'disabled') {
+          setHoveredBadge({ id: root.id, name: master.name, state: 'disabled' })
+          return
+        }
         const next = resolveNextState(machine, currentState, 'on-hover')
         if (next) {
           applySpringStyle(root.id, next.transition)
@@ -167,9 +172,10 @@ export function InteractiveCanvasOverlay({
       const instance = findInstance(event)
       if (!instance) return
       const { root, master, machine } = instance
+      const currentState = root.component.activeState ?? machine.initial
+      if (currentState === 'disabled') return
       pressedInstanceId.current = root.id
       cancelDelay(root.id)
-      const currentState = root.component.activeState ?? machine.initial
       const next = resolveNextState(machine, currentState, 'on-pointerdown') ?? resolveNextState(machine, currentState, 'while-pressed')
       if (next) {
         applySpringStyle(root.id, next.transition)
@@ -201,10 +207,37 @@ export function InteractiveCanvasOverlay({
 
       const { root, master, machine } = instance
       const currentState = root.component.activeState ?? machine.initial
+      if (currentState === 'disabled') return
 
-      // Check on-click transition first, then on-pointerup
-      const nextTransition = resolveNextState(machine, currentState, 'on-click') ?? resolveNextState(machine, currentState, 'on-pointerup')
+      // Handle focus change on click if instance has focused state
+      if (focusedInstanceId.current && focusedInstanceId.current !== root.id) {
+        const prevFocused = store.getSnapshot().elements[focusedInstanceId.current]
+        if (prevFocused && prevFocused.component?.kind === 'instance') {
+          const prevMaster = store.getSnapshot().elements[prevFocused.component.masterId]
+          const prevMachine = getEffectiveStateMachine(prevMaster)
+          if (prevMachine) {
+            const curState = prevFocused.component.activeState ?? prevMachine.initial
+            const blurNext = resolveNextState(prevMachine, curState, 'on-blur')
+            if (blurNext) {
+              applySpringStyle(prevFocused.id, blurNext.transition)
+              store.setComponentActiveState(prevFocused.id, blurNext.targetState, false)
+            } else {
+              const base = originalStates.current.get(prevFocused.id) ?? prevMachine.initial
+              store.setComponentActiveState(prevFocused.id, base, false)
+            }
+          }
+        }
+        focusedInstanceId.current = null
+      }
+
+      // Check on-click transition first, then on-pointerup, then on-focus if not already focused
+      const nextTransition = resolveNextState(machine, currentState, 'on-click') ??
+        resolveNextState(machine, currentState, 'on-pointerup') ??
+        (machine.states.includes('focused') && currentState !== 'focused' ? resolveNextState(machine, currentState, 'on-focus') : null)
       if (nextTransition) {
+        if (nextTransition.targetState === 'focused') {
+          focusedInstanceId.current = root.id
+        }
         applySpringStyle(root.id, nextTransition.transition)
         store.setComponentActiveState(root.id, nextTransition.targetState, false)
         setHoveredBadge({ id: root.id, name: master.name, state: nextTransition.targetState })
@@ -224,6 +257,61 @@ export function InteractiveCanvasOverlay({
       if (event.key === 'Escape') {
         event.preventDefault()
         onExit?.()
+      } else if (event.key === 'Tab') {
+        event.preventDefault()
+        const snapshot = store.getSnapshot()
+        const instanceRoots = Object.values(snapshot.elements).filter(
+          el => el.component?.kind === 'instance' && el.component.instanceId === el.id
+        )
+        if (instanceRoots.length === 0) return
+        const currentIndex = focusedInstanceId.current
+          ? instanceRoots.findIndex(el => el.id === focusedInstanceId.current)
+          : -1
+        const nextIndex = event.shiftKey
+          ? (currentIndex <= 0 ? instanceRoots.length - 1 : currentIndex - 1)
+          : (currentIndex + 1) % instanceRoots.length
+
+        // Blur previous
+        if (focusedInstanceId.current) {
+          const prevTarget = snapshot.elements[focusedInstanceId.current]
+          if (prevTarget && prevTarget.component?.kind === 'instance') {
+            const prevMaster = snapshot.elements[prevTarget.component.masterId]
+            const prevMachine = getEffectiveStateMachine(prevMaster)
+            if (prevMachine) {
+              const curState = prevTarget.component.activeState ?? prevMachine.initial
+              const blurNext = resolveNextState(prevMachine, curState, 'on-blur')
+              if (blurNext) {
+                applySpringStyle(prevTarget.id, blurNext.transition)
+                store.setComponentActiveState(prevTarget.id, blurNext.targetState, false)
+              } else {
+                const base = originalStates.current.get(prevTarget.id) ?? prevMachine.initial
+                store.setComponentActiveState(prevTarget.id, base, false)
+              }
+            }
+          }
+        }
+
+        const nextTarget = instanceRoots[nextIndex]
+        focusedInstanceId.current = nextTarget.id
+        if (!originalStates.current.has(nextTarget.id)) {
+          originalStates.current.set(nextTarget.id, (nextTarget.component as any).activeState ?? null)
+        }
+        const nextMaster = snapshot.elements[(nextTarget.component as any).masterId]
+        const nextMachine = getEffectiveStateMachine(nextMaster)
+        if (nextMachine) {
+          const curState = (nextTarget.component as any).activeState ?? nextMachine.initial
+          if (curState !== 'disabled') {
+            const focusNext = resolveNextState(nextMachine, curState, 'on-focus')
+            if (focusNext) {
+              applySpringStyle(nextTarget.id, focusNext.transition)
+              store.setComponentActiveState(nextTarget.id, focusNext.targetState, false)
+              setHoveredBadge({ id: nextTarget.id, name: nextMaster.name, state: focusNext.targetState })
+              scheduleDelay(nextTarget.id, nextMaster, nextMachine, focusNext.targetState)
+            } else {
+              setHoveredBadge({ id: nextTarget.id, name: nextMaster.name, state: curState })
+            }
+          }
+        }
       }
     }
 
