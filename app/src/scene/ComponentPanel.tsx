@@ -11,7 +11,7 @@ import './components.css'
 
 function overrideCount(overrides: ComponentOverrides): number {
   const stroke = overrides.style?.stroke
-  return Object.keys(overrides.properties ?? {}).length + Object.keys(overrides.style ?? {}).length + (stroke ? Math.max(0, Object.keys(stroke).length - 1) : 0) + Object.keys(overrides.tokenBindings ?? {}).length + Object.keys(overrides.sharedStyleBindings ?? {}).length
+  return Object.keys(overrides.properties ?? {}).length + Object.keys(overrides.style ?? {}).length + (stroke ? Math.max(0, Object.keys(stroke).length - 1) : 0) + Object.keys(overrides.tokenBindings ?? {}).length + Object.keys(overrides.sharedStyleBindings ?? {}).length + (overrides.themeMode !== undefined ? 1 : 0)
 }
 
 export interface OverrideDetail {
@@ -102,6 +102,13 @@ export function overrideDetails(node: SceneElement): OverrideDetail[] {
   }
   if (sharedStyleBindings && Object.keys(sharedStyleBindings).length) {
     details.push({ key: 'sharedStyleBindings', label: 'Styles' })
+  }
+  if (node.component.overrides.themeMode !== undefined) {
+    details.push({
+      key: 'themeMode',
+      label: 'Theme Mode',
+      value: node.component.overrides.themeMode ?? 'Inherit',
+    })
   }
 
   return details

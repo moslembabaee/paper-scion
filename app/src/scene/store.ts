@@ -240,7 +240,7 @@ export class SceneStore {
     const before = this.state
     if (documentChanged) {
       let elements = reflowAutoLayout(next.elements, next.rootIds)
-      elements = synchronizeComponents(elements, resolveTokens(next.tokens, next.styleLibrary.activeThemeId), before.elements, next.styleLibrary)
+      elements = synchronizeComponents(elements, next.tokens, before.elements, next.styleLibrary)
       elements = reflowAutoLayout(elements, next.rootIds)
       validateMaskGraph(elements)
       if (elements !== next.elements) next = Object.freeze({ ...next, elements: Object.freeze(elements) })
@@ -866,7 +866,7 @@ export class SceneStore {
     if (recordHistory) {
       this.commit({ ...this.state.elements, [root.id]: next }, this.state.rootIds, this.state.selection, `Set state to ${activeState ?? 'default'}`)
     } else {
-      let elements = synchronizeComponents({ ...this.state.elements, [root.id]: next }, resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId), this.state.elements, this.state.styleLibrary)
+      let elements = synchronizeComponents({ ...this.state.elements, [root.id]: next }, this.state.tokens, this.state.elements, this.state.styleLibrary)
       this.state = Object.freeze({ ...this.state, elements: Object.freeze(elements) })
       this.emit()
     }
@@ -1124,7 +1124,7 @@ export class SceneStore {
       }
     }
     if (!changed) return
-    let synchronized = synchronizeComponents(nextElements, resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId), this.state.elements, this.state.styleLibrary)
+    let synchronized = synchronizeComponents(nextElements, this.state.tokens, this.state.elements, this.state.styleLibrary)
     this.state = Object.freeze({ ...this.state, elements: Object.freeze(synchronized) })
     this.emit()
   }
@@ -2330,8 +2330,7 @@ export class SceneStore {
     elements[root.id] = nextRoot
 
     // Synchronize to validate and apply properties/tokens
-    const tokens = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId)
-    const synchronized = synchronizeComponents(elements, tokens, this.state.elements, this.state.styleLibrary)
+    const synchronized = synchronizeComponents(elements, this.state.tokens, this.state.elements, this.state.styleLibrary)
 
     this.commit(synchronized, this.state.rootIds, [root.id], `Swap instance to ${newMaster.name}`)
     return this.state.elements[root.id]
@@ -2449,6 +2448,12 @@ export class SceneStore {
           else nextShared[k] = sId
         }
         updatedMaster.sharedStyleBindings = Object.keys(nextShared).length ? nextShared : undefined
+      }
+
+      // Apply theme mode override
+      if (node.component.overrides.themeMode !== undefined) {
+        if (node.component.overrides.themeMode === null) delete updatedMaster.themeMode
+        else updatedMaster.themeMode = node.component.overrides.themeMode
       }
 
       validateElement(updatedMaster)
@@ -2719,6 +2724,11 @@ export class SceneStore {
         else nextShared[k] = sId
       }
       updatedMaster.sharedStyleBindings = Object.keys(nextShared).length ? nextShared : undefined
+    }
+
+    if (node.component.overrides.themeMode !== undefined) {
+      if (node.component.overrides.themeMode === null) delete updatedMaster.themeMode
+      else updatedMaster.themeMode = node.component.overrides.themeMode
     }
 
     validateElement(updatedMaster)
@@ -3219,8 +3229,7 @@ export class SceneStore {
     }
 
     // Force reconciliation with master without resetting existing overrides
-    const tokens = resolveTokens(this.state.tokens, this.state.styleLibrary.activeThemeId)
-    const synchronized = synchronizeComponents(this.state.elements, tokens, undefined, this.state.styleLibrary)
+    const synchronized = synchronizeComponents(this.state.elements, this.state.tokens, undefined, this.state.styleLibrary)
     this.commit(synchronized, this.state.rootIds, this.state.selection, `Sync ${root.name} with master`)
     return this.require(root.id)
   }
@@ -5123,7 +5132,7 @@ export class SceneStore {
       elements[item.id] = freezeElement(next)
     }
 
-    elements = synchronizeComponents(elements, resolver.resolveForMode(this.state.styleLibrary.activeThemeId), this.state.elements, this.state.styleLibrary) as Record<string, SceneElement>
+    elements = synchronizeComponents(elements, this.state.tokens, this.state.elements, this.state.styleLibrary) as Record<string, SceneElement>
 
     this.commit(
       elements,
