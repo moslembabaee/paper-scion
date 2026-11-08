@@ -1,6 +1,15 @@
 # Paper
 
+[![Live Canvas Demo](https://img.shields.io/badge/Live_Canvas-paper.141.11.32.213.nip.io-blue?style=for-the-badge&logo=react)](https://paper.141.11.32.213.nip.io)
+[![Pro Shaders & Kits](https://img.shields.io/badge/Pro_Studio_Kits-Wealth_OS_Store-emerald?style=for-the-badge&logo=shield)](https://wealth.141.11.32.213.nip.io/store)
+[![Telegram Bot Store](https://img.shields.io/badge/Telegram_Bot-@Zac__babaee__bot-blue?style=for-the-badge&logo=telegram)](https://t.me/Zac_babaee_bot)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+
 An open-source, self-hosted, code-bridged infinite canvas design platform inspired by [Paper.design](https://paper.design).
+
+> 🌐 **Live Interactive Canvas:** [paper.141.11.32.213.nip.io](https://paper.141.11.32.213.nip.io)  
+> 🛍 **Developer Blueprints & Shader Engine:** [wealth.141.11.32.213.nip.io/store](https://wealth.141.11.32.213.nip.io/store)  
+> 🤖 **Telegram In-App Kit Store:** [@Zac_babaee_bot](https://t.me/Zac_babaee_bot)
 
 Built autonomously by the **Tri-Agent Orchestra** (`Claude Code` ↔ `OpenAI Codex` ↔ `Google Antigravity`).
 
