@@ -1,7 +1,7 @@
 import { pruneComponentProperties, pruneVariantMatrix, resolveComponentProperties, validPropertyValue, validateComponentProperties, validatePropertyTargets, validateVariantMatrix } from './componentProperties.ts'
 import { validateStateMachine } from './stateMachine.ts'
 import { EMPTY_LIBRARY, detachEditedSharedStyles, resolveSharedStyles, resolveTokens } from '../tokens/library.ts'
-import { getEffectiveThemeMode } from '../tokens/resolver.ts'
+import { getEffectiveThemeMode, normalizeModeId } from '../tokens/resolver.ts'
 import type { ComponentInstance, ComponentLink, ComponentOverrides, ComponentRegistry, ComponentRegistryEntry, ComponentSlotInfo, ElementPatch, ElementType, MasterComponent, OverrideDiffEntry, PropertyOverrideBinding, SceneElement } from './types.ts'
 import { freezeElement, validateElement } from './elements.ts'
 import { equalValue } from './history.ts'
@@ -274,6 +274,14 @@ export function recordComponentTokenEdit(node: SceneElement, updated: SceneEleme
     else if (property === 'shadow') style.shadow = node.style.shadow
     else if (property === 'stroke') style.stroke = { ...style.stroke, color: node.style.stroke!.color }
     else properties[property] = node[property as keyof SceneElement]
+  } else {
+    if (property === 'fill') delete style.fill
+    else if (property === 'shadow') { delete style.shadow; delete (style as any).effects }
+    else if (property === 'stroke' && style.stroke) {
+      delete (style.stroke as any).color
+    } else if (Object.hasOwn(properties, property)) {
+      delete properties[property]
+    }
   }
   if (!equalValue(node.sizing, updated.sizing)) properties.sizing = updated.sizing
   const sharedStyleBindings = { ...link.overrides.sharedStyleBindings }
@@ -360,7 +368,8 @@ export function applyComponentOverrides(source: SceneElement, link: Extract<Comp
   if (explicitThemeMode === null) delete (node as { themeMode?: unknown }).themeMode
   if (!source.tokenBindings && !Object.keys(tokenBindings).length) delete (node as { tokenBindings?: unknown }).tokenBindings
   if (node.type === 'path' && Object.hasOwn(properties, 'd') && !Object.hasOwn(properties, 'nodes')) delete (node as { nodes?: unknown }).nodes
-  return resolveTokenBindings(resolveSharedStyles(node, library, tokens), tokens)
+  const effectiveTokens = explicitThemeMode ? resolveTokens(tokens, explicitThemeMode) : tokens
+  return resolveTokenBindings(resolveSharedStyles(node, library, effectiveTokens), effectiveTokens)
 }
 
 /** Reconcile materialized instance trees, preserving IDs, overrides and unchanged references. */
@@ -452,6 +461,8 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
 
     const effectiveInstanceMode = link.overrides.themeMode ?? root.themeMode ?? getEffectiveThemeMode(root.id, input, library.activeThemeId)
     const instanceTokens = resolveTokens(tokens, effectiveInstanceMode)
+    const layerModes = new Map<string, string | null>()
+    layerModes.set(master.id, effectiveInstanceMode)
 
     for (const source of sources) {
       const old = oldBySource.get(source.id)
@@ -465,7 +476,19 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
           ...(link.activeState !== undefined ? { activeState: link.activeState } : {}),
         }
       }
-      const configured = resolveComponentProperties(source, definitions, propertyValues, instanceTokens, library, link.activeState, master.component.variantMatrix)
+
+      let layerMode: string | null
+      if (source.id === master.id) {
+        layerMode = effectiveInstanceMode
+      } else {
+        const explicitMode = normalizeModeId(component.overrides.themeMode ?? source.themeMode)
+        const parentMode = source.parentId ? layerModes.get(source.parentId) ?? effectiveInstanceMode : effectiveInstanceMode
+        layerMode = explicitMode ?? parentMode
+      }
+      layerModes.set(source.id, layerMode)
+
+      const layerTokens = layerMode === effectiveInstanceMode ? instanceTokens : resolveTokens(tokens, layerMode)
+      const configured = resolveComponentProperties(source, definitions, propertyValues, layerTokens, library, link.activeState, master.component.variantMatrix)
       let childIds = source.type === 'frame' ? source.children.map(child => ids.get(child)!).filter(Boolean) : []
       if (source.type === 'frame') {
         const customSlotChildren = slotChildrenBySource.get(source.id) ?? []
@@ -476,7 +499,7 @@ export function synchronizeComponents(input: Readonly<Record<string, SceneElemen
           put(updatedSlotChild)
         }
       }
-      let node = applyComponentOverrides(configured, component, instanceTokens, library)
+      let node = applyComponentOverrides(configured, component, layerTokens, library)
       node = { ...node, id, parentId: source.id === master.id ? root.parentId : ids.get(source.parentId!)!, zIndex: source.id === master.id ? root.zIndex : source.zIndex,
         ...(source.id === master.id ? { x: root.x, y: root.y, rotation: root.rotation } : {}),
         ...(source.type === 'frame' ? { children: childIds } : {}),
@@ -521,8 +544,10 @@ export function validateComponentGraph(elements: Readonly<Record<string, SceneEl
         if (property && !validPropertyValue(property, value)) throw new Error('Unknown or incompatible component property value')
         if (variantDim && (typeof value !== 'string' || !variantDim.values.includes(value))) throw new Error('Unknown or incompatible component property value')
       }
-      const configured = resolveComponentProperties(source, definitions, root.component.propertyValues ?? {}, tokens, library, root.component.activeState, master.component.variantMatrix)
-      const resolved = applyComponentOverrides(configured, link, tokens, library)
+      const nodeMode = normalizeModeId(link.overrides?.themeMode ?? source.themeMode) ?? getEffectiveThemeMode(node.id, elements, library.activeThemeId)
+      const nodeTokens = resolveTokens(tokens, nodeMode)
+      const configured = resolveComponentProperties(source, definitions, root.component.propertyValues ?? {}, nodeTokens, library, root.component.activeState, master.component.variantMatrix)
+      const resolved = applyComponentOverrides(configured, link, nodeTokens, library)
       for (const key of Object.keys(link.overrides.properties ?? {})) if (!(key in source) && key !== 'sizing' && !(source.type === 'frame' && key === 'layout') && !(source.type === 'path' && key === 'nodes') && !['isSlot', 'slotName', 'isSlotChild', 'slotId'].includes(key) && !(source.type === 'text' && ['kinetic', 'variableAxes', 'openTypeFeatures', 'fontKerning', 'opticalKerning', 'opticalMarginAlignment', 'showOpticalMetrics', 'textOnPath', 'textTransform', 'renderMode', 'renderOutlines', 'outlinePathD'].includes(key))) throw new Error('Unsupported component override')
       validateElement(resolved)
     } else if (node.parentId && componentRoot(elements, node.parentId)?.component?.kind === 'instance') {
@@ -609,6 +634,18 @@ export function getComponentOverrideDiff(
       label: `Style: ${key}`,
       masterValue: sourceLayer.sharedStyleBindings?.[key as SharedStyleKind] ?? 'none',
       overrideValue: val ?? 'detached',
+    })
+  }
+
+  if (overrides.themeMode !== undefined) {
+    const sourceThemeMode = (sourceLayer as any).themeMode ?? 'inherit'
+    diffs.push({
+      layerId: instance.id,
+      layerName: instance.name,
+      channel: 'themeMode',
+      label: 'Theme Mode',
+      masterValue: sourceThemeMode,
+      overrideValue: overrides.themeMode ?? 'inherit',
     })
   }
 
